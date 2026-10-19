@@ -1358,11 +1358,6 @@
     ctx.fill();
     ctx.stroke();
 
-    ctx.font = "700 9px system-ui, sans-serif";
-    ctx.fillStyle = "#38bdf8";
-    ctx.textAlign = "left";
-    ctx.fillText("VÍA DE 2 CARRILES DIVERGENTES →", railStartX - 28, railStartY - 16);
-
     // Anillos de destello donde las bolas acaban de colarse entre los dos carriles
     for (const ring of state.railDropRings) {
       ctx.beginPath();
