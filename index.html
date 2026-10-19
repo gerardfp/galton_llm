@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Galton-LLM — Máquina de Knobs y Palabras</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <!-- Top Header & Analogy Bar -->
+    <header class="top-header">
+      <div class="brand-block">
+        <div class="brand-badge" aria-hidden="true">
+          <span class="knob-icon"></span>
+        </div>
+        <div>
+          <h1>Galton-LLM <span class="subtitle-pill">Simulación Quasi-Física</span></h1>
+          <p class="header-desc">
+            Analogía mecánica de un LLM: cada <strong>palabra del prompt</strong> es una combinación de bolas de 6 tamaños (números decimales) que ruedan por una <strong>vía superior de dos carriles divergentes</strong>: las pequeñas caen antes y las grandes más adelante, activando <strong>todos los knobs</strong> hacia las <strong>24 palabras inferiores</strong>.
+          </p>
+        </div>
+      </div>
+
+      <div class="legend-strip" aria-label="Leyenda de 6 tamaños de bola (valores decimales)">
+        <div class="legend-item">
+          <span class="ball-sample ball-t1"></span>
+          <div><strong>0.15</strong><span>Roja (Cae 1.ª)</span></div>
+        </div>
+        <div class="legend-item">
+          <span class="ball-sample ball-t2"></span>
+          <div><strong>0.30</strong><span>Naranja (2.ª)</span></div>
+        </div>
+        <div class="legend-item">
+          <span class="ball-sample ball-t3"></span>
+          <div><strong>0.45</strong><span>Amarilla (3.ª)</span></div>
+        </div>
+        <div class="legend-item">
+          <span class="ball-sample ball-t4"></span>
+          <div><strong>0.62</strong><span>Verde (4.ª)</span></div>
+        </div>
+        <div class="legend-item">
+          <span class="ball-sample ball-t5"></span>
+          <div><strong>0.78</strong><span>Azul (5.ª)</span></div>
+        </div>
+        <div class="legend-item">
+          <span class="ball-sample ball-t6"></span>
+          <div><strong>0.95</strong><span>Violeta (6.ª)</span></div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace: Left Controls + Center/Right Galton Machine -->
+    <main class="workspace">
+      <!-- Sidebar Controls -->
+      <aside class="control-panel">
+        <!-- Section 1: Prompt Input -->
+        <section class="panel-card">
+          <div class="card-header">
+            <span class="step-badge">1</span>
+            <h2>Prompt de Entrada (Vectores de Bolas)</h2>
+          </div>
+          <p class="card-help">
+            Cada palabra es una <strong>combinación de diferentes bolas</strong> (números decimales). Al rodar por los <strong>dos carriles oblicuos superiores</strong> que se van separando, las bolas pequeñas (<strong style="color:#f87171">rojas</strong>) se cuelan al principio y las grandes (<strong style="color:#c084fc">violetas</strong>) al final.
+          </p>
+
+          <label class="field-label" for="preset-prompt-select">Ejemplos de frases:</label>
+          <select id="preset-prompt-select" class="control-select">
+            <option value="el gato duerme en la">“el gato duerme en la” → (esperado: alfombra / cama)</option>
+            <option value="el sol brilla en el">“el sol brilla en el” → (esperado: cielo / mar)</option>
+            <option value="la red aprende con">“la red aprende con” → (esperado: datos / código)</option>
+            <option value="el perro corre por el">“el perro corre por el” → (esperado: bosque / jardín)</option>
+            <option value="un modelo predice la">“un modelo predice la” → (esperado: palabra / noche)</option>
+            <option value="la luna ilumina la">“la luna ilumina la” → (esperado: noche / ciudad)</option>
+          </select>
+
+          <label class="field-label" for="prompt-input">Tu frase (prompt):</label>
+          <div class="prompt-input-row">
+            <input
+              id="prompt-input"
+              type="text"
+              class="control-input"
+              value="el gato duerme en la"
+              placeholder="Ej: el gato duerme en la"
+              autocomplete="off"
+            />
+          </div>
+
+          <!-- Token chips preview with ball sizes -->
+          <div class="token-preview-box">
+            <div class="token-preview-header">
+              <span>Combinación decimal por palabra (haz clic para lanzar):</span>
+              <span id="token-count-badge" class="badge-mini">5 palabras</span>
+            </div>
+            <div id="token-chips-container" class="token-chips" aria-live="polite"></div>
+          </div>
+
+          <div class="action-buttons">
+            <button id="btn-drop-burst" type="button" class="btn btn-primary">
+              ▶ Lanzar Frase por los Carriles
+            </button>
+            <div class="btn-row-split">
+              <button id="btn-drop-single" type="button" class="btn btn-secondary" title="Lanza una versión compacta (3 bolas decimales por palabra)">
+                ● Vector Corto (3/pal.)
+              </button>
+              <button id="btn-clear-balls" type="button" class="btn btn-ghost" title="Vaciar las bolas y reiniciar el histograma">
+                ↺ Vaciar Cubetas
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 2: Knobs / Network Weights -->
+        <section class="panel-card">
+          <div class="card-header">
+            <span class="step-badge">2</span>
+            <h2>Estado de los Knobs (Pesos)</h2>
+          </div>
+          <p class="card-help">
+            Los <strong>92 knobs</strong> (en 8 filas escalonadas de ancho completo) reciben bolas según el punto de la vía donde caen por su tamaño. Arrastra cualquier knob para girarlo:
+          </p>
+
+          <div class="preset-buttons" role="group" aria-label="Presets de pesos de los knobs">
+            <button id="preset-trained" type="button" class="preset-btn active" data-mode="trained">
+              <span class="preset-title">🎯 Pesos Entrenados</span>
+              <span class="preset-sub">Los knobs se orientan según el contexto del prompt para guiar las bolas hacia palabras con sentido.</span>
+            </button>
+            <button id="preset-random" type="button" class="preset-btn" data-mode="random">
+              <span class="preset-title">🎲 Pesos Aleatorios (Sin entrenar)</span>
+              <span class="preset-sub">Ángulos al azar: el modelo “alucina” y desvía las bolas hacia palabras incoherentes.</span>
+            </button>
+            <button id="preset-neutral" type="button" class="preset-btn" data-mode="neutral">
+              <span class="preset-title">⚖️ Pesos Neutros (Galton 0°)</span>
+              <span class="preset-sub">Todos los knobs a 0. Distribución gaussiana clásica sin sesgo aprendido.</span>
+            </button>
+          </div>
+
+          <div class="sliders-group">
+            <div class="slider-row">
+              <div class="slider-label-line">
+                <label for="balls-per-word-slider">Bolas decimales por palabra (Dimensión)</label>
+                <output id="balls-per-word-val" for="balls-per-word-slider">6</output>
+              </div>
+              <input id="balls-per-word-slider" type="range" min="2" max="10" step="1" value="6" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-label-line">
+                <label for="temperature-slider">Temperatura (Ruido / Vibración)</label>
+                <output id="temperature-val" for="temperature-slider">0.25</output>
+              </div>
+              <input id="temperature-slider" type="range" min="0.02" max="1.0" step="0.02" value="0.25" />
+            </div>
+
+            <div class="slider-row">
+              <div class="slider-label-line">
+                <label for="knob-strength-slider">Fuerza de desvío de los Knobs</label>
+                <output id="knob-strength-val" for="knob-strength-slider">1.0×</output>
+              </div>
+              <input id="knob-strength-slider" type="range" min="0.3" max="1.8" step="0.1" value="1.0" />
+            </div>
+          </div>
+        </section>
+
+        <!-- Section 3: Backpropagation (Entrenamiento) -->
+        <section class="panel-card backprop-card">
+          <div class="card-header">
+            <span class="step-badge step-badge-bp">3</span>
+            <h2>Backpropagation (Entrenar Knobs)</h2>
+          </div>
+          <p class="card-help">
+            Indica qué palabra <strong>tendría que haber salido</strong> (o haz clic sobre ella en las cubetas inferiores). El algoritmo calculará el error y reajustará ligeramente los knobs que tocaron las bolas; también puedes girar cualquier knob a mano.
+          </p>
+
+          <div class="bp-target-row">
+            <label class="field-label" for="target-word-select">Palabra que debería salir (Objetivo <em>y*</em>):</label>
+            <select id="target-word-select" class="control-select bp-select"></select>
+          </div>
+
+          <div class="slider-row">
+            <div class="slider-label-line">
+              <label for="learning-rate-slider">Tasa de aprendizaje (Paso de ajuste <em>η</em>)</label>
+              <output id="learning-rate-val" for="learning-rate-slider">0.22</output>
+            </div>
+            <input id="learning-rate-slider" type="range" min="0.05" max="0.60" step="0.01" value="0.22" />
+          </div>
+
+          <div class="bp-metrics-grid">
+            <div class="bp-metric-box">
+              <span class="bp-metric-label">Épocas (Pasos)</span>
+              <strong id="bp-epoch-count">0</strong>
+            </div>
+            <div class="bp-metric-box">
+              <span class="bp-metric-label">Error (Loss)</span>
+              <strong id="bp-loss-val">—</strong>
+            </div>
+            <div class="bp-metric-box">
+              <span class="bp-metric-label">Acierto en <em>y*</em></span>
+              <strong id="bp-target-prob">0%</strong>
+            </div>
+          </div>
+
+          <div class="action-buttons">
+            <button id="btn-backprop-step" type="button" class="btn btn-backprop">
+              ⚡ 1 Paso de Backprop (Reajustar Knobs + Probar)
+            </button>
+            <div class="btn-row-split">
+              <button id="btn-backprop-nudge-only" type="button" class="btn btn-secondary" title="Reajusta ligeramente los knobs hacia la palabra objetivo sin lanzar nuevas bolas todavía">
+                🔧 Solo Reajustar Knobs
+              </button>
+              <button id="btn-auto-train" type="button" class="btn btn-secondary" title="Ejecuta pasos sucesivos de lanzamiento y backpropagation hasta que gane la palabra objetivo">
+                🔁 Auto-Entrenar
+              </button>
+            </div>
+          </div>
+
+          <div id="bp-feedback-log" class="bp-feedback-log" aria-live="polite">
+            Selecciona una palabra objetivo y pulsa “1 Paso de Backprop” (o gira los knobs a mano).
+          </div>
+        </section>
+
+        <!-- Section 4: Prediction Result -->
+        <section class="panel-card prediction-card">
+          <div class="card-header">
+            <span class="step-badge">4</span>
+            <h2>Predicción (Siguiente Palabra)</h2>
+          </div>
+
+          <div class="winner-box">
+            <div class="winner-label">Palabra con más bolas acumuladas:</div>
+            <div id="winner-word" class="winner-word">—</div>
+            <div id="winner-stats" class="winner-stats">Lanza las bolas para ver la distribución</div>
+          </div>
+
+          <div class="sentence-preview">
+            <span class="sentence-label">Frase resultante:</span>
+            <p id="completed-sentence" class="completed-sentence-text">
+              <span class="prompt-part">el gato duerme en la</span>
+              <span class="predicted-part">…</span>
+            </p>
+          </div>
+
+          <button id="btn-append-winner" type="button" class="btn btn-accent" disabled>
+            ➕ Añadir palabra ganadora al prompt y lanzar
+          </button>
+
+          <div class="top3-list" id="top3-candidates" aria-live="polite"></div>
+        </section>
+      </aside>
+
+      <!-- Main Galton Board Canvas Stage -->
+      <section class="stage-panel" aria-label="Tablero de simulación Galton-LLM">
+        <div class="stage-topbar">
+          <div class="stage-status">
+            <span class="status-dot" id="sim-status-dot"></span>
+            <span id="sim-status-text">Listo — Haz clic en un knob y arrastra para rotar su peso</span>
+          </div>
+          <div class="stage-metrics">
+            <span class="metric-pill">Bolas en vuelo: <strong id="metric-active-balls">0</strong></span>
+            <span class="metric-pill">Bolas en cubetas: <strong id="metric-landed-balls">0</strong></span>
+            <span class="metric-pill" id="hovered-knob-pill">Knob: <strong>ninguno</strong></span>
+          </div>
+        </div>
+
+        <div class="canvas-wrapper" id="canvas-wrapper">
+          <canvas id="galton-canvas"></canvas>
+        </div>
+
+        <div class="stage-footer-hint">
+          <span>💡 <strong>Interacción manual y Backprop:</strong> Arrastra cualquier <strong>knob</strong> (o usa la rueda del ratón) para reajustarlo a mano. Haz <strong>clic en cualquiera de las 24 palabras inferiores</strong> para marcarla como <strong>palabra objetivo 🎯</strong> del Backpropagation.</span>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
