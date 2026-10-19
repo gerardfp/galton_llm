@@ -18,8 +18,6 @@ https://gerardfp.github.io/galton_llm/
 
 Hay **dos motivos** muy concretos por los que ocurre esto en nuestra máquina actual:
 
----
-
 ### 1. Las bolas de ambas frases son casi las mismas y caen de forma independiente
 * **`"el gato duerme en"`** lanza **24 bolas** (las 4 palabras $\times$ 6 bolas).
 * **`"el gato duerme en la"`** lanza **esas mismas 24 bolas** exactamente por los mismos sitios del carril + solo **6 bolas nuevas** de la palabra `"la"`.
@@ -29,8 +27,6 @@ Hay **dos motivos** muy concretos por los que ocurre esto en nuestra máquina ac
 ### 2. El Backpropagation actual crea un "embudo global" hacia la última palabra objetivo
 * En [`performBackpropStep`](file:///home/gerard/galton_llm/app.js#L661-L745) y [`computeIdealKnobWeightForTargetX`](file:///home/gerard/galton_llm/app.js#L507-L515), cuando le pides que entrene hacia `"alfombra"`, reorienta todos los knobs que tocaron las bolas (y su zona de convergencia) para apuntar hacia la cubeta de `"alfombra"`.
 * Es decir, estás entrenando con **un solo ejemplo a la vez** (*batch size = 1*), sobrescribiendo los ángulos que antes apuntaban hacia `"la"`.
-
----
 
 ### ¿Qué hace un LLM real (o qué necesitaría la máquina) para mantener las dos cosas a la vez con los mismos knobs?
 
@@ -51,8 +47,6 @@ Para que un mismo conjunto de 180 knobs pueda responder `"la"` a la primera fras
 
 De hecho, acabas de describir la diferencia fundamental que existe en una red neuronal entre **los Pesos ($W$)** y **las Activaciones / Estado Oculto ($h_t$ o *KV-Cache*)**:
 
----
-
 ### 1. Durante la caída de una frase (*Forward Pass*): Memoria a corto plazo
 * Si antes de tirar las bolas los knobs están en su **ángulo base aprendido ($W_{\text{base}}$)**, y cada vez que una bola choca contra un knob **lo mueve un poquito** por el propio golpe (una bola grande/violeta tiene más masa y lo desvía un poco más que una pequeña/roja):
   * Las primeras bolas de la frase (`"el"`, `"gato"`, `"duerme"`) van dejando un **rastro físico temporal** en los knobs que tocaron.
@@ -63,7 +57,5 @@ De hecho, acabas de describir la diferencia fundamental que existe en una red ne
 * Ese pequeño movimiento causado por el golpe de las bolas es solo una **perturbación temporal de esa tirada** (no es aprendizaje permanente).
 * Cuando ejecutas el paso de **Backpropagation**, el algoritmo corrige el **estado base ($W_{\text{base}}$)** de los knobs según el error respecto a la palabra objetivo $y^*$.
 * Y cada vez que lanzas una frase nueva (o tras el Backprop), los knobs **recuperan exactamente el estado base en el que quedaron tras el último Backprop**, limpios del "empujón temporal" de las bolas del turno anterior.
-
----
 
 ¿Quieres que lo implementemos así en la máquina (que cada knob tenga su peso base post-Backprop, que el choque de cada bola lo desvíe un poquito según su masa/tamaño durante la tirada, y que al lanzar de nuevo vuelva a su estado post-Backprop)?
