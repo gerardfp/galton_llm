@@ -237,6 +237,10 @@
   const temperatureVal = document.getElementById("temperature-val");
   const knobStrengthSlider = document.getElementById("knob-strength-slider");
   const knobStrengthVal = document.getElementById("knob-strength-val");
+  const knobResistanceSlider = document.getElementById("knob-resistance-slider");
+  const knobResistanceVal = document.getElementById("knob-resistance-val");
+  const simSpeedSlider = document.getElementById("sim-speed-slider");
+  const simSpeedVal = document.getElementById("sim-speed-val");
 
   // Controles de Backpropagation
   const targetWordSelect = document.getElementById("target-word-select");
@@ -249,6 +253,8 @@
   const btnBackpropNudgeOnly = document.getElementById("btn-backprop-nudge-only");
   const btnAutoTrain = document.getElementById("btn-auto-train");
   const bpFeedbackLog = document.getElementById("bp-feedback-log");
+  const bpMemoryBadge = document.getElementById("bp-memory-badge");
+  const bpMemoryStrip = document.getElementById("bp-memory-strip");
 
   const winnerWordEl = document.getElementById("winner-word");
   const winnerStatsEl = document.getElementById("winner-stats");
@@ -273,6 +279,17 @@
   const btnCancelVocab = document.getElementById("btn-cancel-vocab");
   const btnCloseVocabX = document.getElementById("btn-close-vocab-x");
 
+  // Controles del diálogo de Reglas de Entrenamiento
+  const rulesDialog = document.getElementById("rules-dialog");
+  const rulesForm = document.getElementById("rules-form");
+  const rulesTextarea = document.getElementById("rules-textarea");
+  const rulesDialogCount = document.getElementById("rules-dialog-count");
+  const rulesDialogChips = document.getElementById("rules-dialog-chips");
+  const btnAddAllExamples = document.getElementById("btn-add-all-examples");
+  const btnClearRules = document.getElementById("btn-clear-rules");
+  const btnCancelRules = document.getElementById("btn-cancel-rules");
+  const btnCloseRulesX = document.getElementById("btn-close-rules-x");
+
   // Estado de la simulación
   const state = {
     width: 960,
@@ -282,11 +299,16 @@
     ballsPerWord: 6,
     temperature: 0.25,
     knobStrength: 1.0,
+    knobResistance: 0.75,
+    simSpeed: 1.0,
     learningRate: 0.22,
     backpropTargetBinIndex: 6, // 'alfombra'
     bpEpochs: 0,
     autoTraining: false,
     autoTrainPendingStep: false,
+    autoTrainIndex: 0,
+    autoTrainPassSuccessCount: 0,
+    trainedPrompts: new Map(), // Memoria de frases entrenadas: promptKey -> { promptKey, targetBinIndex, knobWeights: Map, epochs, converged }
     knobs: [],
     balls: [],
     spawnQueue: [],
@@ -328,6 +350,59 @@
   };
 
   /**
+   * Normaliza un texto de prompt para usarlo como clave de contexto y memoria
+   */
+  function getNormalizedPromptKey(text) {
+    return (text || "")
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .map((w) => w.replace(/[.,;:!?¿¡"']/g, "").trim())
+      .filter(Boolean)
+      .join(" ");
+  }
+
+  /**
+   * Atención Contextual Causal (Self-Attention simplificado):
+   * Calcula una firma determinista que depende de toda la frase y muy especialmente
+   * de la última palabra (Query) y la longitud de la secuencia. Así, "el gato duerme en"
+   * y "el gato duerme en la" proyectan sus bolas por subcanales distintos del carril.
+   */
+  function computePromptContextSignature(words) {
+    if (!words || words.length === 0) {
+      return { hash: 0, attentionCenter: 0.5, subChannelShift: 0 };
+    }
+    const lastWord = words[words.length - 1];
+    let h = 2166136261;
+    for (let wIdx = 0; wIdx < words.length; wIdx++) {
+      const w = words[wIdx];
+      const posWeight = (wIdx + 1) * (wIdx === words.length - 1 ? 37 : 13);
+      for (let i = 0; i < w.length; i++) {
+        h ^= w.charCodeAt(i) * posWeight;
+        h = Math.imul(h, 16777619);
+      }
+    }
+    // Incorporar longitud exacta y última palabra con fuerte peso causal
+    h ^= words.length * 0x9e3779b9;
+    h = Math.imul(h, 0x85ebca6b);
+    for (let i = 0; i < lastWord.length; i++) {
+      h ^= (lastWord.charCodeAt(i) + i * 29) * 0x27d4eb2d;
+      h = Math.imul(h, 16777619);
+    }
+    h ^= h >>> 15;
+    const absH = Math.abs(h);
+
+    // Centro de atención sobre la vía en [0.16, 0.84] y desfase fino de subcanal
+    const attentionCenter = 0.16 + ((absH % 1000) / 1000) * 0.68;
+    const subChannelShift = (((absH >>> 8) % 200) / 200 - 0.5) * 0.085;
+    return {
+      hash: absH,
+      attentionCenter,
+      subChannelShift
+    };
+  }
+
+  /**
    * Convierte un número decimal en [0.05, 0.99] en uno de los 6 niveles de tamaño/color de bola (0=Roja a 5=Violeta)
    */
   function decimalToTierSpec(decimalVal) {
@@ -337,34 +412,40 @@
   }
 
   /**
-   * Genera la combinación determinista de bolas (vector de números decimales) para una palabra.
-   * Cada palabra produce una combinación de diferentes tamaños de bola (de roja a violeta).
+   * Genera la combinación determinista de bolas (vector de números decimales) para una palabra,
+   * modulada por la Atención Contextual (contextSig) del prompt completo.
    */
-  function getWordDecimalVector(rawWord, dimensionCount) {
+  function getWordDecimalVector(rawWord, dimensionCount, contextSig, wordIdx = 0, totalWords = 1) {
     const clean = rawWord.toLowerCase().replace(/[.,;:!?¿¡"']/g, "").trim() || "x";
     const isConn = CONNECTORS.has(clean);
 
-    let hash = 2166136261;
+    let wordHash = 2166136261;
     for (let i = 0; i < clean.length; i++) {
-      hash ^= clean.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
+      wordHash ^= clean.charCodeAt(i);
+      wordHash = Math.imul(wordHash, 16777619);
     }
+
+    const ctxHash = contextSig ? contextSig.hash : 0;
+    const attnCenter = contextSig ? contextSig.attentionCenter : 0.5;
+    const isLastToken = wordIdx === totalWords - 1;
 
     const components = [];
     for (let d = 0; d < dimensionCount; d++) {
-      let h = Math.imul(hash ^ ((d + 1) * 0x9e3779b9), 0x85ebca6b);
+      let h = Math.imul(wordHash ^ (ctxHash * 31) ^ ((d + 1) * 0x9e3779b9), 0x85ebca6b);
       h ^= h >>> 13;
       const pseudoRand = (Math.abs(h) % 1000) / 1000;
 
-      // Garantizar variedad de tamaños dentro de la misma palabra
-      const baseBand = ((d * 2 + Math.abs(hash)) % 6) / 5;
-      let rawDecimal = baseBand * 0.68 + pseudoRand * 0.32;
-
-      if (isConn) {
-        rawDecimal = rawDecimal * 0.8 + 0.07;
+      // Garantizar variedad de tamaños modulada por el centro de atención contextual del prompt
+      const baseBand = ((d * 2 + Math.abs(wordHash + ctxHash)) % 6) / 5;
+      let lexicalVal = baseBand * 0.65 + pseudoRand * 0.35;
+      if (isConn && !isLastToken) {
+        lexicalVal = lexicalVal * 0.82 + 0.07;
       } else {
-        rawDecimal = rawDecimal * 0.88 + 0.1;
+        lexicalVal = lexicalVal * 0.88 + 0.1;
       }
+
+      // Mezcla de Self-Attention: el contexto global de la frase desplaza el vector decimal
+      const rawDecimal = lexicalVal * 0.62 + attnCenter * 0.38;
 
       const decimal = Math.max(0.08, Math.min(0.98, Math.round(rawDecimal * 100) / 100));
       const spec = decimalToTierSpec(decimal);
@@ -399,20 +480,20 @@
   }
 
   /**
-   * Calcula la coordenada X exacta en la que la separación de los dos carriles supera el tamaño de la bola
-   * (las bolas rojas pequeñas caen al principio a la izquierda; las violetas grandes llegan hasta la derecha)
+   * Calcula la coordenada X exacta en la que la separación de los dos carriles supera el tamaño de la bola,
+   * incorporando el desplazamiento de subcanal de la Atención Contextual del prompt.
    */
-  function computeDropXForBall(decimalVal, tokenIndex, totalTokens) {
+  function computeDropXForBall(decimalVal, tokenIndex, totalTokens, contextSig) {
     const { railStartX, railEndX } = state.boardBounds;
     const trackLen = railEndX - railStartX;
 
-    // El progreso a lo largo de la vía depende directamente del diámetro/valor decimal de la bola
+    // El progreso a lo largo de la vía depende del diámetro/valor decimal de la bola y del subcanal contextual
     const normalizedSize = Math.max(0.04, Math.min(0.96, (decimalVal - 0.06) / 0.92));
-    // Pequeño desfase según posición de la palabra y temperatura para repartir sobre todos los knobs vecinos
-    const wordOffset = totalTokens > 1 ? ((tokenIndex / (totalTokens - 1)) - 0.5) * 0.045 : 0;
-    const jitter = (Math.random() - 0.5) * (0.025 + state.temperature * 0.035);
+    const wordOffset = totalTokens > 1 ? ((tokenIndex / (totalTokens - 1)) - 0.5) * 0.038 : 0;
+    const ctxShift = contextSig ? contextSig.subChannelShift : 0;
+    const jitter = (Math.random() - 0.5) * (0.018 + state.temperature * 0.028);
 
-    const tDrop = Math.max(0.04, Math.min(0.96, normalizedSize + wordOffset + jitter));
+    const tDrop = Math.max(0.04, Math.min(0.96, normalizedSize + wordOffset + ctxShift + jitter));
     return railStartX + tDrop * trackLen;
   }
 
@@ -435,7 +516,7 @@
 
     if (announce) {
       const targetWord = VOCABULARY[binIndex].word;
-      bpFeedbackLog.innerHTML = `Palabra objetivo fijada en <strong>“${escapeHtml(targetWord)}”</strong>. Pulsa <em>1 Paso de Backprop</em> para reajustar los knobs hacia ella o gíralos a mano.`;
+      bpFeedbackLog.innerHTML = `Palabra objetivo fijada en <strong>“${escapeHtml(targetWord)}”</strong>. Pulsa <em>1 Paso de Backprop</em> para reajustar los knobs hacia ella.${renderTrainedMemoryStripHtml()}`;
     }
   }
 
@@ -444,16 +525,18 @@
     const rawParts = text
       .trim()
       .split(/\s+/)
-      .map((w) => w.replace(/[.,;:!?¿¡"']/g, "").trim())
+      .map((w) => w.replace(/[.,;:!?¿¡"']/g, "").trim().toLowerCase())
       .filter(Boolean);
 
-    return rawParts.map((word, idx) => {
-      const lower = word.toLowerCase();
-      const vector = getWordDecimalVector(lower, dim);
+    const contextSig = computePromptContextSignature(rawParts);
+
+    return rawParts.map((lower, idx) => {
+      const vector = getWordDecimalVector(lower, dim, contextSig, idx, rawParts.length);
       return {
         id: `${idx}-${lower}`,
         word: lower,
-        vector
+        vector,
+        contextSig
       };
     });
   }
@@ -599,7 +682,7 @@
       for (let c = 0; c < count; c++) {
         const x = rowLeft + c * stepX;
         const prev = previousKnobs && previousKnobs[globalIdx];
-        const prevW = prev ? prev.weight : 0;
+        const prevBaseW = prev ? (prev.baseWeight ?? prev.weight) : 0;
 
         newKnobs.push({
           id: globalIdx,
@@ -608,8 +691,9 @@
           x,
           y,
           radius: knobRadius,
-          weight: prevW,
-          displayWeight: prevW,
+          baseWeight: prevBaseW,
+          weight: prevBaseW,
+          displayWeight: prevBaseW,
           hitEnergy: 0,
           bpGlow: 0,
           bpDelay: 0,
@@ -625,18 +709,99 @@
     }
   }
 
-  function applyKnobPreset(mode) {
+  /**
+   * Devuelve todos los knobs exactamente al estado base en el que quedaron tras el último Backprop
+   * (eliminando las pequeñas desviaciones temporales producidas por el choque de las bolas en la tirada anterior).
+   */
+  function resetKnobsToBaseWeights() {
+    for (const knob of state.knobs) {
+      knob.weight = knob.baseWeight;
+    }
+  }
+
+  function updateMemoryBadgeUI() {
+    if (bpMemoryBadge) {
+      const n = state.trainedPrompts.size;
+      bpMemoryBadge.textContent = `🧠 ${n} ${n === 1 ? "regla" : "reglas"}`;
+    }
+    renderTrainedMemoryStripHtml();
+  }
+
+  function renderTrainedMemoryStripHtml() {
+    if (!bpMemoryStrip) return "";
+    if (state.trainedPrompts.size === 0) {
+      bpMemoryStrip.innerHTML = `<span class="bp-memory-empty">Sin reglas guardadas aún</span>`;
+      return "";
+    }
+    const activeKey = getNormalizedPromptKey(promptInput.value);
+    const chips = [];
+    for (const [pKey, entry] of state.trainedPrompts.entries()) {
+      const targetW = VOCABULARY[entry.targetBinIndex]?.word || "?";
+      const shortPrompt = pKey.length > 20 ? `…${pKey.slice(-19)}` : pKey;
+      const isCurrent = pKey === activeKey;
+      const statusPrefix = entry.converged ? "✓ " : isCurrent ? "● " : "";
+      chips.push(
+        `<button type="button" class="bp-memory-chip${isCurrent ? " active-rule" : ""}" data-prompt="${escapeHtml(pKey)}" title="Haz clic para probar la frase entrenada: “${escapeHtml(pKey)}” → “${escapeHtml(targetW)}”">${statusPrefix}“${escapeHtml(shortPrompt)}” → <strong>${escapeHtml(targetW)}</strong></button>`
+      );
+    }
+    bpMemoryStrip.innerHTML = chips.join("");
+    return "";
+  }
+
+  /**
+   * Sincroniza los pesos base de los knobs combinando todas las frases entrenadas en memoria
+   * y dando prioridad en los cruces compartidos al contexto de la frase activa.
+   */
+  function syncContextualKnobsForPrompt(promptKey) {
+    if (state.trainedPrompts.size === 0) {
+      resetKnobsToBaseWeights();
+      return;
+    }
+
+    // 1. Aplicar los caminos aprendidos de todas las demás frases en memoria
+    for (const [otherKey, entry] of state.trainedPrompts.entries()) {
+      if (otherKey === promptKey) continue;
+      for (const [kId, wVal] of entry.knobWeights.entries()) {
+        if (state.knobs[kId]) {
+          state.knobs[kId].baseWeight = wVal;
+          state.knobs[kId].weight = wVal;
+        }
+      }
+    }
+
+    // 2. Superponer los knobs del camino específico de la frase activa (resuelve cruces compartidos)
+    const activeEntry = state.trainedPrompts.get(promptKey);
+    if (activeEntry) {
+      for (const [kId, wVal] of activeEntry.knobWeights.entries()) {
+        if (state.knobs[kId]) {
+          state.knobs[kId].baseWeight = wVal;
+          state.knobs[kId].weight = wVal;
+        }
+      }
+    }
+
+    // Restaurar cualquier desviación de choque al estado base post-Backprop
+    resetKnobsToBaseWeights();
+  }
+
+  function applyKnobPreset(mode, clearMemory = false) {
     state.mode = mode;
 
     Object.entries(presetBtns).forEach(([key, btn]) => {
       if (btn) btn.classList.toggle("active", key === mode);
     });
 
+    if (clearMemory && (mode === "neutral" || mode === "random")) {
+      state.trainedPrompts.clear();
+      updateMemoryBadgeUI();
+    }
+
     const tokens = parsePromptTokens(promptInput.value);
     state.targetBinsInfo = computeTrainedTargetBins(tokens);
 
     if (mode === "neutral") {
       state.knobs.forEach((knob) => {
+        knob.baseWeight = 0;
         knob.weight = 0;
         knob.lastDelta = 0;
       });
@@ -646,13 +811,16 @@
     if (mode === "random") {
       state.knobs.forEach((knob) => {
         const rand = Math.random() * 2 - 1;
-        knob.weight = Math.round(rand * 100) / 100;
+        const w = Math.round(rand * 100) / 100;
+        knob.baseWeight = w;
+        knob.weight = w;
         knob.lastDelta = 0;
       });
       return;
     }
 
     if (mode === "trained") {
+      const promptKey = getNormalizedPromptKey(promptInput.value);
       const primaryTarget = state.targetBinsInfo[0] || { binIndex: 6, weight: 1.0 };
       const secondaryTarget = state.targetBinsInfo[1] || primaryTarget;
 
@@ -662,27 +830,68 @@
       state.knobs.forEach((knob) => {
         const targetX = knob.col % 5 === 0 && knob.row >= 3 ? secondaryX : primaryX;
         const idealW = computeIdealKnobWeightForTargetX(knob, targetX);
-        knob.weight = Math.round(idealW * 100) / 100;
+        const w = Math.round(idealW * 100) / 100;
+        knob.baseWeight = w;
+        knob.weight = w;
         knob.lastDelta = 0;
       });
+
+      if (state.trainedPrompts.size > 0) {
+        syncContextualKnobsForPrompt(promptKey);
+      }
     }
   }
 
   /**
-   * Ejecuta un paso de Backpropagation:
-   * Reajusta ligeramente los knobs que intervinieron en la caída (en cualquiera de las zonas de tamaño)
-   * y los que forman el cauce hacia la palabra objetivo (y*).
+   * Ejecuta un paso de Backpropagation con Memoria Contextual Multi-Frase:
+   * Parte del estado base post-Backprop anterior (knob.baseWeight), lo reajusta ligeramente hacia
+   * la palabra objetivo (y*) y deja todos los knobs listos en ese nuevo estado base para el siguiente lanzamiento.
    */
   function performBackpropStep(launchAfter = true) {
     const targetBin = state.bins[state.backpropTargetBinIndex];
     if (!targetBin) return;
 
+    const promptKey = getNormalizedPromptKey(promptInput.value) || "default";
+    const tokens = parsePromptTokens(promptInput.value);
+    const { railStartX, railEndX, left, right } = state.boardBounds;
+    const usableW = right - left;
     const targetX = targetBin.xCenter;
-    const usableW = state.boardBounds.right - state.boardBounds.left;
     const lr = state.learningRate;
 
-    const knobStats = new Map();
+    // 1. Devolver todos los knobs a su estado base post-Backprop (descartando el empujón temporal de las bolas)
+    syncContextualKnobsForPrompt(promptKey);
 
+    let memEntry = state.trainedPrompts.get(promptKey);
+    if (!memEntry) {
+      memEntry = {
+        promptKey,
+        targetBinIndex: state.backpropTargetBinIndex,
+        knobWeights: new Map(),
+        epochs: 0
+      };
+      state.trainedPrompts.set(promptKey, memEntry);
+    } else if (memEntry.targetBinIndex !== state.backpropTargetBinIndex) {
+      memEntry.targetBinIndex = state.backpropTargetBinIndex;
+    }
+    memEntry.epochs += 1;
+    updateMemoryBadgeUI();
+
+    // Calcular centro medio de caída en el carril superior para esta frase contextualizada
+    let sumDropX = 0;
+    let countDropX = 0;
+    tokens.forEach((tok, idx) => {
+      tok.vector.forEach((comp) => {
+        const normalizedSize = Math.max(0.04, Math.min(0.96, (comp.decimal - 0.06) / 0.92));
+        const wordOffset = tokens.length > 1 ? ((idx / (tokens.length - 1)) - 0.5) * 0.038 : 0;
+        const ctxShift = tok.contextSig ? tok.contextSig.subChannelShift : 0;
+        const tDrop = Math.max(0.04, Math.min(0.96, normalizedSize + wordOffset + ctxShift));
+        sumDropX += railStartX + tDrop * (railEndX - railStartX);
+        countDropX++;
+      });
+    });
+    const promptDropCenterX = countDropX > 0 ? sumDropX / countDropX : (railStartX + railEndX) * 0.5;
+
+    const knobStats = new Map();
     for (const record of state.landedHistory) {
       for (const kId of record.touchedKnobs) {
         if (!knobStats.has(kId)) {
@@ -706,44 +915,59 @@
       const touchInfo = knobStats.get(knob.id);
       const wasTouched = Boolean(touchInfo && touchInfo.touches > 0);
 
-      // En las filas inferiores miramos además la cercanía al embudo convergente hacia targetX
+      // Corredor localizado desde la zona de caída de la frase actual hasta la cubeta objetivo targetX
+      const corridorCenterX =
+        promptDropCenterX * (1 - layerProgress * 0.85) + targetX * (layerProgress * 0.85);
+      const corridorHalfWidth = usableW * (0.18 - layerProgress * 0.035);
+      const distToCorridor = Math.abs(knob.x - corridorCenterX);
       const distToTargetX = Math.abs(knob.x - targetX);
-      const convergenceWidth = usableW * (0.45 - layerProgress * 0.22);
-      const inConvergenceZone = distToTargetX <= convergenceWidth;
+      const inActiveCorridor =
+        distToCorridor <= corridorHalfWidth ||
+        (layerProgress >= 0.5 && distToTargetX <= usableW * 0.16);
 
-      if (!wasTouched && !inConvergenceZone) return;
+      if (!wasTouched && !inActiveCorridor) return;
 
+      const currentBase = knob.baseWeight;
       const idealW = computeIdealKnobWeightForTargetX(knob, targetX);
       let deltaW = 0;
 
       if (wasTouched) {
         const avgLandedX = touchInfo.sumLandedX / touchInfo.massSum;
-        const empiricalPush = Math.tanh((targetX - avgLandedX) / (usableW * 0.22));
-        const structuralDelta = idealW - knob.weight;
+        const empiricalPush = Math.tanh((targetX - avgLandedX) / (usableW * 0.2));
+        const structuralDelta = idealW - currentBase;
         const credit = Math.min(
-          1.4,
-          0.6 + (touchInfo.touches / Math.max(1, state.landedHistory.length)) * 1.5
+          1.45,
+          0.65 + (touchInfo.touches / Math.max(1, state.landedHistory.length)) * 1.5
         );
-        deltaW = lr * credit * (0.65 * structuralDelta + 0.45 * empiricalPush);
-      } else if (inConvergenceZone) {
-        const zoneFactor = 1 - (distToTargetX / convergenceWidth) * 0.6;
-        deltaW = lr * 0.55 * zoneFactor * (idealW - knob.weight);
+        deltaW = lr * credit * (0.7 * structuralDelta + 0.45 * empiricalPush);
+      } else if (inActiveCorridor) {
+        const zoneFactor = Math.max(0.35, 1 - (distToCorridor / Math.max(1, corridorHalfWidth)) * 0.55);
+        deltaW = lr * 0.65 * zoneFactor * (idealW - currentBase);
       }
 
-      deltaW = Math.max(-0.28, Math.min(0.28, deltaW));
+      deltaW = Math.max(-0.32, Math.min(0.32, deltaW));
 
-      if (Math.abs(deltaW) >= 0.008) {
-        const nextW = Math.max(-0.96, Math.min(0.96, knob.weight + deltaW));
-        const actualDelta = nextW - knob.weight;
-        knob.weight = Math.round(nextW * 100) / 100;
+      if (Math.abs(deltaW) >= 0.006) {
+        const nextW = Math.max(-0.96, Math.min(0.96, currentBase + deltaW));
+        const actualDelta = nextW - currentBase;
+        const roundedW = Math.round(nextW * 100) / 100;
+        knob.baseWeight = roundedW;
+        knob.weight = roundedW;
         knob.lastDelta = actualDelta;
         knob.bpDelay = (7 - knob.row) * 0.045;
         knob.bpGlow = 1.0;
 
+        memEntry.knobWeights.set(knob.id, roundedW);
+
         adjustedCount++;
         sumAbsDelta += Math.abs(actualDelta);
+      } else {
+        memEntry.knobWeights.set(knob.id, knob.baseWeight);
       }
     });
+
+    // 2. Dejar todos los knobs exactamente en su estado post-Backprop para el siguiente lanzamiento
+    syncContextualKnobsForPrompt(promptKey);
 
     spawnBackpropPulses(targetBin);
 
@@ -751,7 +975,7 @@
     bpEpochCountEl.textContent = String(state.bpEpochs);
 
     const avgDelta = adjustedCount > 0 ? (sumAbsDelta / adjustedCount).toFixed(2) : "0.00";
-    bpFeedbackLog.innerHTML = `<strong>Época #${state.bpEpochs}:</strong> Reajustados <strong>${adjustedCount} knobs</strong> (Δ medio: ±${avgDelta}) hacia <strong>“${escapeHtml(targetBin.word)}”</strong>.`;
+    bpFeedbackLog.innerHTML = `<strong>Época #${state.bpEpochs}:</strong> ${adjustedCount} knobs (Δ ±${avgDelta}) para <strong>“${escapeHtml(promptKey)}” → “${escapeHtml(targetBin.word)}”</strong>.${renderTrainedMemoryStripHtml()}`;
 
     if (launchAfter) {
       clearBallsAndBins(true);
@@ -779,6 +1003,7 @@
 
   function renderTokenChips() {
     const tokens = parsePromptTokens(promptInput.value);
+    const promptKey = getNormalizedPromptKey(promptInput.value);
     if (tokenCountBadge) {
       tokenCountBadge.textContent = `${tokens.length} ${tokens.length === 1 ? "palabra" : "palabras"} · ${tokens.length * state.ballsPerWord} bolas`;
     }
@@ -789,7 +1014,7 @@
       chip.type = "button";
       chip.className = "token-chip";
       const decimalsStr = tok.vector.map((c) => c.decimal.toFixed(2)).join(", ");
-      chip.title = `Vector de "${tok.word}": [${decimalsStr}] — Haz clic para lanzar solo esta palabra por los carriles`;
+      chip.title = `Vector contextual de "${tok.word}": [${decimalsStr}] — Haz clic para lanzar solo esta palabra por los carriles`;
 
       const textSpan = document.createElement("span");
       textSpan.textContent = tok.word;
@@ -811,6 +1036,9 @@
 
       chip.append(textSpan, ballsWrap);
       chip.addEventListener("click", () => {
+        if (state.balls.length === 0 && state.spawnQueue.length === 0) {
+          resetKnobsToBaseWeights();
+        }
         enqueueWordVectors([tok]);
       });
       tokenChipsContainer.appendChild(chip);
@@ -819,7 +1047,9 @@
     const suggestedTargets = computeTrainedTargetBins(tokens);
     state.targetBinsInfo = suggestedTargets;
 
-    if (state.mode === "trained") {
+    if (state.trainedPrompts.has(promptKey)) {
+      syncContextualKnobsForPrompt(promptKey);
+    } else if (state.mode === "trained") {
       applyKnobPreset("trained");
     }
     updatePredictionUI();
@@ -839,7 +1069,8 @@
           tier: comp.tier,
           spec: comp.spec,
           tokenIndex: idx,
-          totalTokens: tokens.length
+          totalTokens: tokens.length,
+          contextSig: tok.contextSig
         });
       });
     }
@@ -863,7 +1094,12 @@
     );
     const r = Math.min(baseR, maxSafeRadiusForTier);
 
-    const dropX = computeDropXForBall(item.decimal, item.tokenIndex, item.totalTokens);
+    const dropX = computeDropXForBall(
+      item.decimal,
+      item.tokenIndex,
+      item.totalTokens,
+      item.contextSig
+    );
 
     state.balls.push({
       word: item.word,
@@ -895,6 +1131,7 @@
     state.spawnQueue = [];
     state.landedHistory = [];
     state.railDropRings = [];
+    resetKnobsToBaseWeights();
     state.bins.forEach((bin) => {
       bin.count = 0;
       bin.weightedScore = 0;
@@ -941,11 +1178,23 @@
     }
 
     if (totalLanded === 0) {
-      winnerWordEl.textContent = "—";
-      winnerStatsEl.textContent = "Lanza bolas para ver distribución";
+      if (winnerWordEl) winnerWordEl.textContent = "—";
+      if (winnerStatsEl) winnerStatsEl.textContent = "Lanza bolas para ver distribución";
       completedSentenceEl.innerHTML = `<span class="prompt-part">${escapeHtml(promptText || "…")}</span> <span class="predicted-part">…</span>`;
       btnAppendWinner.disabled = true;
-      top3CandidatesEl.innerHTML = "";
+      top3CandidatesEl.innerHTML = [0, 1, 2]
+        .map(
+          (idx) => `
+          <div class="top3-row">
+            <strong>#${idx + 1} —</strong>
+            <div class="top3-bar-wrap">
+              <div class="top3-bar-fill" style="width: 0%"></div>
+            </div>
+            <span>0 (0% · 🎲0%)</span>
+          </div>
+        `
+        )
+        .join("");
       return;
     }
 
@@ -957,28 +1206,83 @@
     const winner = sorted[0];
     const pct = Math.round((winner.count / totalLanded) * 100);
 
-    winnerWordEl.textContent = `“${winner.word}”`;
-    winnerStatsEl.textContent = `${winner.count}/${totalLanded} bolas (${pct}% · Σ ${winner.weightedScore.toFixed(1)})`;
+    if (winnerWordEl) winnerWordEl.textContent = `“${winner.word}”`;
+    if (winnerStatsEl) {
+      winnerStatsEl.textContent = `${winner.count}/${totalLanded} bolas (${pct}% · Σ ${winner.weightedScore.toFixed(1)})`;
+    }
 
     completedSentenceEl.innerHTML = `<span class="prompt-part">${escapeHtml(promptText)}</span> <span class="predicted-part">${escapeHtml(winner.word)}</span>`;
     btnAppendWinner.disabled = false;
 
-    const top3 = sorted.slice(0, 3).filter((b) => b.count > 0);
-    top3CandidatesEl.innerHTML = top3
-      .map((item, idx) => {
+    const top3Active = sorted.slice(0, 3).filter((b) => b.count > 0);
+    const samplingProbs = computeTop3SamplingProbs(top3Active);
+    top3CandidatesEl.innerHTML = [0, 1, 2]
+      .map((idx) => {
+        const item = top3Active[idx];
+        if (!item) {
+          return `
+            <div class="top3-row">
+              <strong>#${idx + 1} —</strong>
+              <div class="top3-bar-wrap">
+                <div class="top3-bar-fill" style="width: 0%"></div>
+              </div>
+              <span>0 (0% · 🎲0%)</span>
+            </div>
+          `;
+        }
         const itemPct = Math.round((item.count / totalLanded) * 100);
+        const samplePct = Math.round((samplingProbs[idx] || 0) * 100);
         const isTarget = item.index === state.backpropTargetBinIndex;
         return `
-          <div class="top3-row">
+          <div class="top3-row" title="Bolas: ${item.count}/${totalLanded} (${itemPct}%) · Probabilidad de ser elegida con Temperatura ${state.temperature.toFixed(2)}: ${samplePct}%">
             <strong>#${idx + 1} ${escapeHtml(item.word)} ${isTarget ? "🎯" : ""}</strong>
             <div class="top3-bar-wrap">
               <div class="top3-bar-fill" style="width: ${itemPct}%"></div>
             </div>
-            <span>${item.count} (${itemPct}%)</span>
+            <span>${item.count} (${itemPct}% · 🎲${samplePct}%)</span>
           </div>
         `;
       })
       .join("");
+  }
+
+  /**
+   * Calcula las probabilidades de muestreo (Softmax con Temperatura) entre las 3 palabras ganadoras
+   */
+  function computeTop3SamplingProbs(top3) {
+    if (!top3 || top3.length === 0) return [];
+    if (top3.length === 1) return [1.0];
+    const temp = Math.max(0.02, state.temperature);
+    const scale = Math.max(0.07, temp * 1.35);
+    const totalTop3Balls = top3.reduce((acc, b) => acc + b.count, 0) || 1;
+    const logits = top3.map((b) => {
+      const share = b.count / totalTop3Balls;
+      const avgDec = b.weightedScore / Math.max(1, b.count);
+      return (Math.log(Math.max(0.01, share)) + avgDec * 0.12) / scale;
+    });
+    const maxLogit = Math.max(...logits);
+    const exps = logits.map((l) => Math.exp(l - maxLogit));
+    const sumExp = exps.reduce((a, b) => a + b, 0) || 1;
+    return exps.map((e) => e / sumExp);
+  }
+
+  function sampleWinnerFromTop3() {
+    const sorted = [...state.bins].sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return b.weightedScore - a.weightedScore;
+    });
+    const top3 = sorted.slice(0, 3).filter((b) => b.count > 0);
+    if (!top3.length) return null;
+    const probs = computeTop3SamplingProbs(top3);
+    const r = Math.random();
+    let accum = 0;
+    for (let i = 0; i < top3.length; i++) {
+      accum += probs[i];
+      if (r <= accum) {
+        return { chosen: top3[i], rank: i + 1, prob: probs[i] };
+      }
+    }
+    return { chosen: top3[0], rank: 1, prob: probs[0] || 1 };
   }
 
   function escapeHtml(str) {
@@ -1068,14 +1372,50 @@
             total > 0 &&
             targetCount / total >= 0.45;
 
+          const activeKey = getNormalizedPromptKey(promptInput.value) || "default";
+          const activeEntry = state.trainedPrompts.get(activeKey);
+
           if (isTargetWinner) {
-            stopAutoTrain(
-              `✅ ¡Convergencia alcanzada en ${state.bpEpochs} épocas! La palabra objetivo “${VOCABULARY[state.backpropTargetBinIndex].word}” ya gana con el ${Math.round((targetCount / total) * 100)}% de las bolas.`
-            );
+            if (activeEntry) activeEntry.converged = true;
+            state.autoTrainPassSuccessCount += 1;
+            renderTrainedMemoryStripHtml();
           } else {
-            performBackpropStep(true);
+            if (activeEntry) activeEntry.converged = false;
+            state.autoTrainPassSuccessCount = 0;
+            // Reajustar los knobs para la frase actual antes de pasar al siguiente elemento del memory-strip
+            for (const entry of state.trainedPrompts.values()) {
+              if (entry !== activeEntry) entry.converged = false;
+            }
+            performBackpropStep(false);
           }
-        }, 420);
+
+          const keys = Array.from(state.trainedPrompts.keys());
+          if (keys.length > 0 && state.autoTrainPassSuccessCount >= keys.length) {
+            stopAutoTrain(
+              keys.length === 1
+                ? `✅ ¡Convergencia alcanzada en ${state.bpEpochs} épocas! “${VOCABULARY[state.backpropTargetBinIndex].word}” gana con el ${Math.round((targetCount / total) * 100)}%.`
+                : `✅ ¡Convergencia completada en las ${keys.length} reglas de la memoria tras ${state.bpEpochs} épocas!`
+            );
+            return;
+          }
+
+          if (keys.length > 1) {
+            const currentIdx = Math.max(0, keys.indexOf(activeKey));
+            state.autoTrainIndex = (currentIdx + 1) % keys.length;
+            const nextKey = keys[state.autoTrainIndex];
+            const nextEntry = state.trainedPrompts.get(nextKey);
+            promptInput.value = nextKey;
+            if (nextEntry && nextEntry.targetBinIndex < VOCABULARY.length) {
+              setBackpropTargetBin(nextEntry.targetBinIndex, false);
+            }
+            renderTokenChips();
+            syncContextualKnobsForPrompt(nextKey);
+            renderTrainedMemoryStripHtml();
+          }
+
+          clearBallsAndBins(true);
+          triggerBurstDrop();
+        }, Math.max(45, Math.round(440 / Math.max(0.2, state.simSpeed))));
       }
       return;
     }
@@ -1199,6 +1539,25 @@
             if (ball.vy < 48 && ny < 0) {
               const maxUpBounce = -56 + ball.tier * 6;
               ball.vy = Math.max(maxUpBounce, ball.vy * 0.5);
+            }
+
+            // Al golpear el knob, la bola lo mueve según su tamaño/masa y la resistencia configurada de los knobs
+            const isFirstTouchOnKnob = !ball.touchedKnobs.has(knob.id);
+            const yieldFactor = Math.max(0, (1 - state.knobResistance) / 0.25); // 1.0 al 75% de resistencia, 0.0 al 100%, 4.0 al 0%
+            if (isFirstTouchOnKnob && yieldFactor > 0) {
+              const baseSizeNudge = 0.014 + (ball.tier / 5) * 0.042; // 0.014 (roja pequeña) a 0.056 (violeta grande)
+              const sizeNudge = baseSizeNudge * yieldFactor;
+              const torqueDir = nx >= 0 ? 1 : -1;
+              const maxTempOffset = Math.min(0.65, 0.18 * yieldFactor);
+              const currentOffset = knob.weight - knob.baseWeight;
+              const nextOffset = Math.max(
+                -maxTempOffset,
+                Math.min(maxTempOffset, currentOffset + torqueDir * sizeNudge)
+              );
+              knob.weight = Math.max(
+                -0.98,
+                Math.min(0.98, Math.round((knob.baseWeight + nextOffset) * 1000) / 1000)
+              );
             }
 
             ball.vAngle = ball.vx * 0.04;
@@ -1424,8 +1783,10 @@
 
     const r = knob.radius;
     const w = knob.displayWeight;
+    const baseW = typeof knob.baseWeight === "number" ? knob.baseWeight : w;
     const maxTiltRad = 0.98;
     const tiltAngle = w * maxTiltRad;
+    const baseTiltAngle = baseW * maxTiltRad;
 
     const isHovered = state.hoveredKnob === knob || state.draggingKnob === knob;
     const hasBpGlow = knob.bpDelay <= 0 && knob.bpGlow > 0.02;
@@ -1485,6 +1846,20 @@
     ctx.stroke();
 
     ctx.restore();
+
+    // Si las bolas han movido un poco el knob respecto a su estado base post-Backprop, dibujar marca testigo
+    if (Math.abs(w - baseW) > 0.01) {
+      ctx.save();
+      ctx.rotate(baseTiltAngle);
+      ctx.beginPath();
+      ctx.moveTo(0, -1);
+      ctx.lineTo(0, -r + 2.2);
+      ctx.lineWidth = 1.3;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "rgba(192, 132, 252, 0.72)";
+      ctx.stroke();
+      ctx.restore();
+    }
 
     ctx.beginPath();
     ctx.arc(0, 0, 1.8, 0, Math.PI * 2);
@@ -1625,13 +2000,6 @@
       ctx.strokeStyle = isWinner ? "#10b981" : isBpTarget ? "#a78bfa" : "#334155";
       ctx.stroke();
 
-      if (isBpTarget) {
-        ctx.font = "700 10px system-ui, sans-serif";
-        ctx.textAlign = "center";
-        ctx.fillStyle = "#e879f9";
-        ctx.fillText("🎯 y*", bin.xCenter, binsTop - (bin.count > 0 ? 17 : 5));
-      }
-
       if (bin.count > 0) {
         ctx.font = "700 11px system-ui, sans-serif";
         ctx.textAlign = "center";
@@ -1744,7 +2112,7 @@
       state.draggingKnob = knob;
       state.dragStartX = pos.x;
       state.dragStartY = pos.y;
-      state.dragStartWeight = knob.weight;
+      state.dragStartWeight = knob.baseWeight;
       canvas.setPointerCapture(evt.pointerId);
       updateHoveredKnobUI(knob);
       return;
@@ -1766,12 +2134,18 @@
 
       const newW = Math.max(-0.98, Math.min(0.98, state.dragStartWeight + combinedDelta));
       const k = state.draggingKnob;
-      k.weight = Math.round(newW * 100) / 100;
+      const roundedW = Math.round(newW * 100) / 100;
+      k.baseWeight = roundedW;
+      k.weight = roundedW;
       k.hitEnergy = 0.6;
       state.mode = "custom";
       Object.values(presetBtns).forEach((btn) => btn && btn.classList.remove("active"));
+      const activeKey = getNormalizedPromptKey(promptInput.value);
+      if (state.trainedPrompts.has(activeKey)) {
+        state.trainedPrompts.get(activeKey).knobWeights.set(k.id, roundedW);
+      }
       updateHoveredKnobUI(k);
-      bpFeedbackLog.innerHTML = `Ajuste manual en <strong>Knob F${k.row + 1}·N${k.col + 1}</strong> → peso <strong>${k.weight > 0 ? "+" : ""}${k.weight.toFixed(2)}</strong>. Lanza la frase para ver cómo cambia la caída hacia <strong>“${escapeHtml(VOCABULARY[state.backpropTargetBinIndex].word)}”</strong>.`;
+      bpFeedbackLog.innerHTML = `Ajuste manual en <strong>Knob F${k.row + 1}·N${k.col + 1}</strong> → peso <strong>${k.weight > 0 ? "+" : ""}${k.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
       return;
     }
 
@@ -1796,29 +2170,89 @@
 
       evt.preventDefault();
       const step = evt.deltaY < 0 ? 0.08 : -0.08;
-      knob.weight = Math.max(-0.98, Math.min(0.98, Math.round((knob.weight + step) * 100) / 100));
+      const roundedW = Math.max(-0.98, Math.min(0.98, Math.round((knob.baseWeight + step) * 100) / 100));
+      knob.baseWeight = roundedW;
+      knob.weight = roundedW;
       knob.hitEnergy = 0.7;
       state.mode = "custom";
       Object.values(presetBtns).forEach((btn) => btn && btn.classList.remove("active"));
+      const activeKey = getNormalizedPromptKey(promptInput.value);
+      if (state.trainedPrompts.has(activeKey)) {
+        state.trainedPrompts.get(activeKey).knobWeights.set(knob.id, roundedW);
+      }
       updateHoveredKnobUI(knob);
-      bpFeedbackLog.innerHTML = `Ajuste manual con rueda en <strong>Knob F${knob.row + 1}·N${knob.col + 1}</strong> → peso <strong>${knob.weight > 0 ? "+" : ""}${knob.weight.toFixed(2)}</strong>.`;
+      bpFeedbackLog.innerHTML = `Ajuste manual con rueda en <strong>Knob F${knob.row + 1}·N${knob.col + 1}</strong> → peso <strong>${knob.weight > 0 ? "+" : ""}${knob.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
     },
     { passive: false }
   );
 
-  presetPromptSelect.addEventListener("change", () => {
+  function applySelectedPrompt(newPromptText) {
     stopAutoTrain();
-    promptInput.value = presetPromptSelect.value;
-    clearBallsAndBins();
+    promptInput.value = newPromptText;
+    clearBallsAndBins(true);
     renderTokenChips();
-    if (state.targetBinsInfo.length > 0) {
+    const promptKey = getNormalizedPromptKey(promptInput.value);
+    if (state.trainedPrompts.has(promptKey)) {
+      setBackpropTargetBin(state.trainedPrompts.get(promptKey).targetBinIndex, false);
+    } else if (state.targetBinsInfo.length > 0) {
       setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
     }
-    triggerBurstDrop();
-  });
+  }
+
+  if (presetPromptSelect) {
+    presetPromptSelect.addEventListener("change", () => {
+      applySelectedPrompt(presetPromptSelect.value);
+    });
+  }
+
+  // Diálogo de selección de ejemplos de Prompt
+  const btnOpenExamples = document.getElementById("btn-open-examples");
+  const examplesDialog = document.getElementById("examples-dialog");
+  const examplesList = document.getElementById("examples-list");
+  const btnCloseExamples = document.getElementById("btn-close-examples");
+  const btnCloseExamplesX = document.getElementById("btn-close-examples-x");
+
+  if (btnOpenExamples && examplesDialog) {
+    btnOpenExamples.addEventListener("click", () => {
+      examplesDialog.showModal();
+    });
+
+    if (examplesList) {
+      examplesList.addEventListener("click", (evt) => {
+        const btn = evt.target.closest(".example-item-btn");
+        if (!btn || !btn.dataset.prompt) return;
+        applySelectedPrompt(btn.dataset.prompt);
+        examplesDialog.close();
+      });
+    }
+
+    if (btnCloseExamples) {
+      btnCloseExamples.addEventListener("click", () => examplesDialog.close());
+    }
+    if (btnCloseExamplesX) {
+      btnCloseExamplesX.addEventListener("click", () => examplesDialog.close());
+    }
+
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      examplesDialog.addEventListener("click", (event) => {
+        if (event.target !== examplesDialog) return;
+        const rect = examplesDialog.getBoundingClientRect();
+        const isInside =
+          rect.top <= event.clientY &&
+          event.clientY <= rect.top + rect.height &&
+          rect.left <= event.clientX &&
+          event.clientX <= rect.left + rect.width;
+        if (!isInside) examplesDialog.close();
+      });
+    }
+  }
 
   promptInput.addEventListener("input", () => {
     renderTokenChips();
+    const promptKey = getNormalizedPromptKey(promptInput.value);
+    if (state.trainedPrompts.has(promptKey)) {
+      setBackpropTargetBin(state.trainedPrompts.get(promptKey).targetBinIndex, false);
+    }
   });
 
   promptInput.addEventListener("keydown", (evt) => {
@@ -1831,8 +2265,15 @@
   function triggerBurstDrop() {
     const tokens = parsePromptTokens(promptInput.value);
     if (!tokens.length) return;
-    if (state.mode === "trained") {
+    // Cada vez que se hace un lanzamiento se vacía automáticamente el tablero y los knobs vuelven a su estado base
+    clearBallsAndBins(true);
+    const promptKey = getNormalizedPromptKey(promptInput.value);
+    if (state.trainedPrompts.has(promptKey)) {
+      syncContextualKnobsForPrompt(promptKey);
+    } else if (state.mode === "trained") {
       applyKnobPreset("trained");
+    } else if (state.trainedPrompts.size > 0) {
+      syncContextualKnobsForPrompt(promptKey);
     }
     enqueueWordVectors(tokens);
   }
@@ -1841,43 +2282,293 @@
     triggerBurstDrop();
   });
 
-  btnDropSingle.addEventListener("click", () => {
-    const tokens = parsePromptTokens(promptInput.value, 3);
-    if (!tokens.length) return;
-    if (state.mode === "trained") {
-      applyKnobPreset("trained");
-    }
-    enqueueWordVectors(tokens);
-  });
+  if (btnDropSingle) {
+    btnDropSingle.addEventListener("click", () => {
+      const tokens = parsePromptTokens(promptInput.value, 3);
+      if (!tokens.length) return;
+      clearBallsAndBins(true);
+      const promptKey = getNormalizedPromptKey(promptInput.value);
+      if (state.trainedPrompts.has(promptKey)) {
+        syncContextualKnobsForPrompt(promptKey);
+      } else if (state.mode === "trained") {
+        applyKnobPreset("trained");
+      } else if (state.trainedPrompts.size > 0) {
+        syncContextualKnobsForPrompt(promptKey);
+      }
+      enqueueWordVectors(tokens);
+    });
+  }
 
-  btnClearBalls.addEventListener("click", () => {
-    stopAutoTrain();
-    clearBallsAndBins();
-  });
+  if (btnClearBalls) {
+    btnClearBalls.addEventListener("click", () => {
+      stopAutoTrain();
+      clearBallsAndBins(true);
+    });
+  }
 
   btnAppendWinner.addEventListener("click", () => {
     stopAutoTrain();
-    const sorted = [...state.bins].sort((a, b) => b.count - a.count);
-    const winner = sorted[0];
-    if (!winner || winner.count === 0) return;
+    const sampled = sampleWinnerFromTop3();
+    if (!sampled || !sampled.chosen || sampled.chosen.count === 0) return;
 
-    promptInput.value = `${promptInput.value.trim()} ${winner.word}`.trim();
-    clearBallsAndBins();
+    const chosenWord = sampled.chosen.word;
+    const probPct = Math.round(sampled.prob * 100);
+    bpFeedbackLog.innerHTML = `🎲 Muestreo Top-3 (Temp ${state.temperature.toFixed(2)}): elegida <strong>#${sampled.rank} “${escapeHtml(chosenWord)}”</strong> (${probPct}% prob).`;
+
+    promptInput.value = `${promptInput.value.trim()} ${chosenWord}`.trim();
+    clearBallsAndBins(true);
     renderTokenChips();
-    if (state.targetBinsInfo.length > 0) {
+    const promptKey = getNormalizedPromptKey(promptInput.value);
+    if (state.trainedPrompts.has(promptKey)) {
+      setBackpropTargetBin(state.trainedPrompts.get(promptKey).targetBinIndex, false);
+    } else if (state.targetBinsInfo.length > 0) {
       setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
     }
+    renderTrainedMemoryStripHtml();
     triggerBurstDrop();
   });
 
+  function handleMemoryChipClick(evt) {
+    const chip = evt.target.closest(".bp-memory-chip");
+    if (!chip) return;
+    const pKey = chip.dataset.prompt;
+    if (!pKey) return;
+    stopAutoTrain();
+    promptInput.value = pKey;
+    clearBallsAndBins(true);
+    renderTokenChips();
+    const mem = state.trainedPrompts.get(pKey);
+    if (mem && mem.targetBinIndex < VOCABULARY.length) {
+      setBackpropTargetBin(mem.targetBinIndex, false);
+    }
+    syncContextualKnobsForPrompt(pKey);
+    renderTrainedMemoryStripHtml();
+    triggerBurstDrop();
+  }
+
+  if (bpMemoryStrip) {
+    bpMemoryStrip.addEventListener("click", handleMemoryChipClick);
+  }
+  bpFeedbackLog.addEventListener("click", handleMemoryChipClick);
+
+  // Diálogo de Configuración (engranaje superior derecho)
+  const btnOpenConfig = document.getElementById("btn-open-config");
+  const configDialog = document.getElementById("config-dialog");
+  const btnCloseConfig = document.getElementById("btn-close-config");
+  const btnCloseConfigX = document.getElementById("btn-close-config-x");
+  const configStateFeedback = document.getElementById("config-state-feedback");
+
+  if (btnOpenConfig && configDialog) {
+    btnOpenConfig.addEventListener("click", () => {
+      configDialog.showModal();
+    });
+    if (btnCloseConfig) {
+      btnCloseConfig.addEventListener("click", () => configDialog.close());
+    }
+    if (btnCloseConfigX) {
+      btnCloseConfigX.addEventListener("click", () => configDialog.close());
+    }
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      configDialog.addEventListener("click", (event) => {
+        if (event.target !== configDialog) return;
+        const rect = configDialog.getBoundingClientRect();
+        const isInside =
+          rect.top <= event.clientY &&
+          event.clientY <= rect.top + rect.height &&
+          rect.left <= event.clientX &&
+          event.clientX <= rect.left + rect.width;
+        if (!isInside) configDialog.close();
+      });
+    }
+  }
+
   Object.entries(presetBtns).forEach(([modeKey, btn]) => {
+    if (!btn) return;
     btn.addEventListener("click", () => {
       stopAutoTrain();
-      applyKnobPreset(modeKey);
-      clearBallsAndBins();
-      triggerBurstDrop();
+      applyKnobPreset(modeKey, true);
+      clearBallsAndBins(true);
+      const msg =
+        modeKey === "random"
+          ? "🎲 Knobs puestos en disposición aleatoria. Pulsa “▶ Lanzar Frase” o entrena con “⚡ Backprop”."
+          : modeKey === "neutral"
+            ? "⚖️ Knobs puestos en posición neutra (0°). Pulsa “▶ Lanzar Frase” o entrena con “⚡ Backprop”."
+            : "🎯 Knobs pre-entrenados listos. Pulsa “▶ Lanzar Frase”.";
+      bpFeedbackLog.innerHTML = msg;
+      if (configStateFeedback) {
+        configStateFeedback.innerHTML = msg;
+      }
     });
   });
+
+  // Guardar y Cargar Estado completo de la máquina
+  const btnSaveState = document.getElementById("btn-save-state");
+  const btnLoadState = document.getElementById("btn-load-state");
+  const SAVED_STATE_KEY = "galton_llm_saved_state_v1";
+
+  if (btnSaveState) {
+    btnSaveState.addEventListener("click", () => {
+      stopAutoTrain();
+      const serializedRules = [];
+      for (const [pKey, entry] of state.trainedPrompts.entries()) {
+        serializedRules.push({
+          promptKey: pKey,
+          targetBinIndex: entry.targetBinIndex,
+          epochs: entry.epochs || 0,
+          converged: Boolean(entry.converged),
+          knobWeights: Array.from(entry.knobWeights.entries())
+        });
+      }
+      const payload = {
+        mode: state.mode,
+        bpEpochs: state.bpEpochs,
+        backpropTargetBinIndex: state.backpropTargetBinIndex,
+        ballsPerWord: state.ballsPerWord,
+        learningRate: state.learningRate,
+        knobStrength: state.knobStrength,
+        knobResistance: state.knobResistance,
+        temperature: state.temperature,
+        vocabWords: VOCABULARY.map((v) => v.word),
+        knobBaseWeights: state.knobs.map((k) => k.baseWeight),
+        rules: serializedRules
+      };
+      state.savedSnapshot = payload;
+      try {
+        localStorage.setItem(SAVED_STATE_KEY, JSON.stringify(payload));
+      } catch (_) {
+        // Ignorar si localStorage no está disponible
+      }
+      const summaryMsg = `💾 Estado guardado: ${state.knobs.length} knobs, ${VOCABULARY.length} palabras de vocabulario, ${state.ballsPerWord} bolas/pal., η=${state.learningRate.toFixed(2)}, Fuerza=${state.knobStrength.toFixed(1)}×, Resist.=${Math.round(state.knobResistance * 100)}%, T=${state.temperature.toFixed(2)} y ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "regla" : "reglas"}.`;
+      bpFeedbackLog.innerHTML = summaryMsg;
+      if (configStateFeedback) {
+        configStateFeedback.innerHTML = summaryMsg;
+      }
+    });
+  }
+
+  if (btnLoadState) {
+    btnLoadState.addEventListener("click", () => {
+      stopAutoTrain();
+      let payload = state.savedSnapshot || null;
+      if (!payload) {
+        try {
+          const raw = localStorage.getItem(SAVED_STATE_KEY);
+          if (raw) payload = JSON.parse(raw);
+        } catch (_) {
+          payload = null;
+        }
+      }
+      if (!payload || !Array.isArray(payload.knobBaseWeights)) {
+        const warnMsg = `⚠️ No hay ningún estado guardado todavía. Pulsa primero <strong>💾 Guardar Estado</strong>.`;
+        bpFeedbackLog.innerHTML = warnMsg;
+        if (configStateFeedback) {
+          configStateFeedback.innerHTML = warnMsg;
+        }
+        return;
+      }
+
+      // 1. Restaurar Vocabulario
+      if (Array.isArray(payload.vocabWords) && payload.vocabWords.length >= 4) {
+        VOCABULARY = payload.vocabWords.map((w) => ({
+          word: w,
+          role: inferWordRole(w)
+        }));
+        state.bins = VOCABULARY.map((item, index) => ({
+          index,
+          word: item.word,
+          role: item.role,
+          count: 0,
+          weightedScore: 0,
+          settledBalls: [],
+          xLeft: 0,
+          xRight: 0,
+          xCenter: 0,
+          flash: 0
+        }));
+        if (vocabCountBadge) {
+          vocabCountBadge.textContent = String(VOCABULARY.length);
+        }
+        initTargetWordSelect();
+        layoutBoard(true);
+      }
+
+      // 2. Restaurar hiperparámetros (bolas/palabra, tasa, fuerza, resistencia, temperatura)
+      if (typeof payload.ballsPerWord === "number") {
+        state.ballsPerWord = payload.ballsPerWord;
+        if (ballsPerWordSlider) ballsPerWordSlider.value = String(state.ballsPerWord);
+        if (ballsPerWordVal) ballsPerWordVal.textContent = String(state.ballsPerWord);
+      }
+      if (typeof payload.learningRate === "number") {
+        state.learningRate = payload.learningRate;
+        if (learningRateSlider) learningRateSlider.value = String(state.learningRate);
+        if (learningRateVal) learningRateVal.textContent = state.learningRate.toFixed(2);
+      }
+      if (typeof payload.knobStrength === "number") {
+        state.knobStrength = payload.knobStrength;
+        if (knobStrengthSlider) knobStrengthSlider.value = String(state.knobStrength);
+        if (knobStrengthVal) knobStrengthVal.textContent = `${state.knobStrength.toFixed(1)}×`;
+      }
+      if (typeof payload.knobResistance === "number") {
+        state.knobResistance = payload.knobResistance;
+        if (knobResistanceSlider) knobResistanceSlider.value = String(state.knobResistance);
+        if (knobResistanceVal) knobResistanceVal.textContent = `${Math.round(state.knobResistance * 100)}%`;
+      }
+      if (typeof payload.temperature === "number") {
+        state.temperature = payload.temperature;
+        if (temperatureSlider) temperatureSlider.value = String(state.temperature);
+        if (temperatureVal) temperatureVal.textContent = state.temperature.toFixed(2);
+      }
+
+      // 3. Restaurar modo y pesos de los Knobs
+      state.mode = payload.mode || "custom";
+      Object.entries(presetBtns).forEach(([key, btn]) => {
+        if (btn) btn.classList.toggle("active", key === state.mode);
+      });
+
+      state.knobs.forEach((knob, idx) => {
+        if (typeof payload.knobBaseWeights[idx] === "number") {
+          knob.baseWeight = payload.knobBaseWeights[idx];
+          knob.weight = payload.knobBaseWeights[idx];
+          knob.lastDelta = 0;
+        }
+      });
+
+      // 4. Restaurar reglas entrenadas
+      const restoredPrompts = new Map();
+      if (Array.isArray(payload.rules)) {
+        for (const r of payload.rules) {
+          restoredPrompts.set(r.promptKey, {
+            promptKey: r.promptKey,
+            targetBinIndex: r.targetBinIndex,
+            epochs: r.epochs || 0,
+            converged: Boolean(r.converged),
+            knobWeights: new Map(Array.isArray(r.knobWeights) ? r.knobWeights : [])
+          });
+        }
+      }
+      state.trainedPrompts = restoredPrompts;
+      state.bpEpochs = payload.bpEpochs || 0;
+      bpEpochCountEl.textContent = String(state.bpEpochs);
+
+      if (
+        typeof payload.backpropTargetBinIndex === "number" &&
+        payload.backpropTargetBinIndex < VOCABULARY.length
+      ) {
+        setBackpropTargetBin(payload.backpropTargetBinIndex, false);
+      }
+
+      clearBallsAndBins(true);
+      renderTokenChips();
+      updateMemoryBadgeUI();
+      updatePredictionUI();
+
+      const loadMsg = `📂 Estado restaurado: ${state.knobs.length} knobs, ${VOCABULARY.length} palabras de vocabulario, ${state.ballsPerWord} bolas/pal., η=${state.learningRate.toFixed(2)}, Fuerza=${state.knobStrength.toFixed(1)}×, Resist.=${Math.round(state.knobResistance * 100)}%, T=${state.temperature.toFixed(2)} y ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "regla" : "reglas"}.`;
+      bpFeedbackLog.innerHTML = loadMsg;
+      if (configStateFeedback) {
+        configStateFeedback.innerHTML = loadMsg;
+      }
+    });
+  }
 
   ballsPerWordSlider.addEventListener("input", () => {
     state.ballsPerWord = Number(ballsPerWordSlider.value);
@@ -1888,6 +2579,7 @@
   temperatureSlider.addEventListener("input", () => {
     state.temperature = Number(temperatureSlider.value);
     temperatureVal.textContent = state.temperature.toFixed(2);
+    updatePredictionUI();
   });
 
   knobStrengthSlider.addEventListener("input", () => {
@@ -1896,6 +2588,24 @@
       knobStrengthVal.textContent = `${state.knobStrength.toFixed(1)}×`;
     }
   });
+
+  if (knobResistanceSlider) {
+    knobResistanceSlider.addEventListener("input", () => {
+      state.knobResistance = Number(knobResistanceSlider.value);
+      if (knobResistanceVal) {
+        knobResistanceVal.textContent = `${Math.round(state.knobResistance * 100)}%`;
+      }
+    });
+  }
+
+  if (simSpeedSlider) {
+    simSpeedSlider.addEventListener("input", () => {
+      state.simSpeed = Number(simSpeedSlider.value);
+      if (simSpeedVal) {
+        simSpeedVal.textContent = `${state.simSpeed.toFixed(1)}×`;
+      }
+    });
+  }
 
   targetWordSelect.addEventListener("change", () => {
     stopAutoTrain();
@@ -1912,17 +2622,19 @@
     performBackpropStep(true);
   });
 
-  btnBackpropNudgeOnly.addEventListener("click", () => {
-    stopAutoTrain();
-    performBackpropStep(false);
-  });
+  if (btnBackpropNudgeOnly) {
+    btnBackpropNudgeOnly.addEventListener("click", () => {
+      stopAutoTrain();
+      performBackpropStep(false);
+    });
+  }
 
   function stopAutoTrain(customMessage) {
     if (!state.autoTraining && !customMessage) return;
     state.autoTraining = false;
     state.autoTrainPendingStep = false;
     btnAutoTrain.classList.remove("active-loop");
-    btnAutoTrain.textContent = "🔁 Auto-Entrenar";
+    btnAutoTrain.textContent = "🔁 Auto-Train";
     if (customMessage) {
       bpFeedbackLog.innerHTML = customMessage;
     }
@@ -1933,10 +2645,37 @@
       stopAutoTrain("⏹ Auto-entrenamiento pausado por el usuario.");
       return;
     }
+
+    // Asegurar que la frase actual esté registrada en la tira de memoria si aún no había ninguna o si se editó
+    const currentKey = getNormalizedPromptKey(promptInput.value) || "default";
+    if (!state.trainedPrompts.has(currentKey)) {
+      performBackpropStep(false);
+    }
+
+    for (const entry of state.trainedPrompts.values()) {
+      entry.converged = false;
+    }
+    state.autoTrainPassSuccessCount = 0;
+
+    const keys = Array.from(state.trainedPrompts.keys());
+    state.autoTrainIndex = 0;
+    if (keys.length > 0) {
+      const firstKey = keys[0];
+      const firstEntry = state.trainedPrompts.get(firstKey);
+      promptInput.value = firstKey;
+      if (firstEntry && firstEntry.targetBinIndex < VOCABULARY.length) {
+        setBackpropTargetBin(firstEntry.targetBinIndex, false);
+      }
+      renderTokenChips();
+      syncContextualKnobsForPrompt(firstKey);
+      renderTrainedMemoryStripHtml();
+    }
+
     state.autoTraining = true;
     btnAutoTrain.classList.add("active-loop");
-    btnAutoTrain.textContent = "⏹ Detener Auto-Entreno";
-    performBackpropStep(true);
+    btnAutoTrain.textContent = "⏹ Detener";
+    clearBallsAndBins(true);
+    triggerBurstDrop();
   });
 
   // Gestión del diálogo para definir el Vocabulario de Salida
@@ -2075,6 +2814,211 @@
     }
   }
 
+  // Gestión del diálogo de Reglas de Entrenamiento (frase: palabra_objetivo)
+  const ALL_EXAMPLE_RULES = [
+    { prompt: "el gato duerme en", target: "la" },
+    { prompt: "el gato duerme en la", target: "alfombra" },
+    { prompt: "el sol brilla en el", target: "cielo" },
+    { prompt: "la red aprende con", target: "datos" },
+    { prompt: "el perro corre por el", target: "bosque" },
+    { prompt: "un modelo predice la", target: "palabra" },
+    { prompt: "la luna ilumina la", target: "noche" }
+  ];
+
+  function parseRulesInput(rawText) {
+    const lines = rawText.split(/\r?\n/);
+    const parsedMap = new Map();
+
+    for (const rawLine of lines) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const match = line.match(/^(.+?)\s*(?::|->|→)\s*(.+)$/);
+      if (!match) continue;
+
+      const promptKey = getNormalizedPromptKey(match[1]);
+      const targetWord = match[2]
+        .replace(/[.,;:!?¿¡"'()[\]{}]/g, "")
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)[0];
+
+      if (!promptKey || !targetWord) continue;
+      parsedMap.set(promptKey, { promptKey, targetWord });
+    }
+
+    return Array.from(parsedMap.values());
+  }
+
+  function formatTrainedPromptsForTextarea() {
+    const lines = [];
+    for (const [pKey, entry] of state.trainedPrompts.entries()) {
+      const targetW = VOCABULARY[entry.targetBinIndex]?.word || "";
+      if (pKey && targetW) {
+        lines.push(`${pKey}: ${targetW}`);
+      }
+    }
+    return lines.join("\n");
+  }
+
+  function updateRulesDialogPreview() {
+    if (!rulesTextarea || !rulesDialogCount || !rulesDialogChips) return;
+    const rules = parseRulesInput(rulesTextarea.value);
+    rulesDialogCount.textContent = `${rules.length} ${rules.length === 1 ? "regla detectada" : "reglas detectadas"}`;
+    rulesDialogChips.innerHTML = rules
+      .map((r) => {
+        const inVocab = VOCABULARY.some((v) => v.word === r.targetWord);
+        return `<span class="vocab-chip-item">“${escapeHtml(r.promptKey)}” → <strong>${escapeHtml(r.targetWord)}</strong>${inVocab ? "" : " <em>(+vocab)</em>"}</span>`;
+      })
+      .join("");
+  }
+
+  if (bpMemoryBadge && rulesDialog) {
+    bpMemoryBadge.addEventListener("click", () => {
+      stopAutoTrain();
+      rulesTextarea.value = formatTrainedPromptsForTextarea();
+      updateRulesDialogPreview();
+      rulesDialog.showModal();
+    });
+
+    rulesTextarea.addEventListener("input", updateRulesDialogPreview);
+
+    if (btnAddAllExamples) {
+      btnAddAllExamples.addEventListener("click", () => {
+        const currentRules = parseRulesInput(rulesTextarea.value);
+        const mergedMap = new Map();
+        for (const r of currentRules) {
+          mergedMap.set(r.promptKey, r.targetWord);
+        }
+        for (const ex of ALL_EXAMPLE_RULES) {
+          const pk = getNormalizedPromptKey(ex.prompt);
+          if (!mergedMap.has(pk)) {
+            mergedMap.set(pk, ex.target);
+          }
+        }
+        const mergedLines = [];
+        for (const [pk, tw] of mergedMap.entries()) {
+          mergedLines.push(`${pk}: ${tw}`);
+        }
+        rulesTextarea.value = mergedLines.join("\n");
+        updateRulesDialogPreview();
+      });
+    }
+
+    if (btnClearRules) {
+      btnClearRules.addEventListener("click", () => {
+        rulesTextarea.value = "";
+        updateRulesDialogPreview();
+      });
+    }
+
+    if (btnCancelRules) {
+      btnCancelRules.addEventListener("click", () => {
+        rulesDialog.close();
+      });
+    }
+
+    if (btnCloseRulesX) {
+      btnCloseRulesX.addEventListener("click", () => {
+        rulesDialog.close();
+      });
+    }
+
+    if (rulesForm) {
+      rulesForm.addEventListener("submit", () => {
+        stopAutoTrain();
+        const rules = parseRulesInput(rulesTextarea.value);
+
+        // Si alguna palabra objetivo no existe en el vocabulario actual, añadirla automáticamente
+        let vocabModified = false;
+        for (const r of rules) {
+          const exists = VOCABULARY.some((v) => v.word === r.targetWord);
+          if (!exists && VOCABULARY.length < 40) {
+            VOCABULARY.push({
+              word: r.targetWord,
+              role: inferWordRole(r.targetWord)
+            });
+            vocabModified = true;
+          }
+        }
+
+        if (vocabModified) {
+          state.bins = VOCABULARY.map((item, index) => ({
+            index,
+            word: item.word,
+            role: item.role,
+            count: 0,
+            weightedScore: 0,
+            settledBalls: [],
+            xLeft: 0,
+            xRight: 0,
+            xCenter: 0,
+            flash: 0
+          }));
+          if (vocabCountBadge) {
+            vocabCountBadge.textContent = String(VOCABULARY.length);
+          }
+          initTargetWordSelect();
+          layoutBoard(true);
+        }
+
+        const nextTrainedPrompts = new Map();
+        for (const r of rules) {
+          const targetBinIndex = VOCABULARY.findIndex((v) => v.word === r.targetWord);
+          if (targetBinIndex < 0) continue;
+
+          const existing = state.trainedPrompts.get(r.promptKey);
+          if (existing && existing.targetBinIndex === targetBinIndex) {
+            nextTrainedPrompts.set(r.promptKey, existing);
+          } else {
+            nextTrainedPrompts.set(r.promptKey, {
+              promptKey: r.promptKey,
+              targetBinIndex,
+              knobWeights: new Map(),
+              epochs: 0,
+              converged: false
+            });
+          }
+        }
+
+        state.trainedPrompts = nextTrainedPrompts;
+        updateMemoryBadgeUI();
+
+        if (state.trainedPrompts.size > 0) {
+          const currentKey = getNormalizedPromptKey(promptInput.value);
+          const activeKey = state.trainedPrompts.has(currentKey)
+            ? currentKey
+            : Array.from(state.trainedPrompts.keys())[0];
+          const entry = state.trainedPrompts.get(activeKey);
+          promptInput.value = activeKey;
+          if (entry) {
+            setBackpropTargetBin(entry.targetBinIndex, false);
+          }
+          renderTokenChips();
+          syncContextualKnobsForPrompt(activeKey);
+          renderTrainedMemoryStripHtml();
+          bpFeedbackLog.innerHTML = `✅ ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "regla cargada" : "reglas cargadas"} en memoria. Pulsa <strong>🔁 Auto-Entrenar</strong> para entrenarlas una por una.`;
+        } else {
+          bpFeedbackLog.innerHTML = "Memoria de reglas vaciada. Elige palabra objetivo y pulsa “1 Paso de Backprop”.";
+        }
+      });
+    }
+
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      rulesDialog.addEventListener("click", (event) => {
+        if (event.target !== rulesDialog) return;
+        const rect = rulesDialog.getBoundingClientRect();
+        const isDialogContent =
+          rect.top <= event.clientY &&
+          event.clientY <= rect.top + rect.height &&
+          rect.left <= event.clientX &&
+          event.clientX <= rect.left + rect.width;
+        if (isDialogContent) return;
+        rulesDialog.close();
+      });
+    }
+  }
+
   const canvasWrapper = document.getElementById("canvas-wrapper");
   const resizeObserver = new ResizeObserver((entries) => {
     for (const entry of entries) {
@@ -2097,10 +3041,15 @@
 
   let lastTime = performance.now();
   function animate(now) {
-    const dt = Math.min(0.035, (now - lastTime) / 1000);
+    const rawDt = Math.min(0.035, (now - lastTime) / 1000);
     lastTime = now;
 
-    stepPhysics(dt);
+    const totalSimDt = rawDt * state.simSpeed;
+    const macroSteps = Math.max(1, Math.ceil(state.simSpeed));
+    const stepDt = totalSimDt / macroSteps;
+    for (let i = 0; i < macroSteps; i++) {
+      stepPhysics(stepDt);
+    }
     drawBoard();
 
     requestAnimationFrame(animate);
@@ -2111,7 +3060,6 @@
   layoutBoard(false);
   requestAnimationFrame((t) => {
     lastTime = t;
-    triggerBurstDrop();
     requestAnimationFrame(animate);
   });
 })();
