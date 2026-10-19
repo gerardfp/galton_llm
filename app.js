@@ -522,21 +522,21 @@
     const W = state.width;
     const H = state.height;
 
-    const marginX = Math.max(28, W * 0.032);
+    const marginX = Math.max(20, W * 0.028);
     const left = marginX;
     const right = W - marginX;
     const usableW = right - left;
 
-    // Vía superior con ligera pendiente hacia la derecha (de railStartY a railEndY)
+    // Vía superior con ligera pendiente hacia la derecha (escalada proporcionalmente a la altura H)
     const railStartX = left + usableW * 0.045;
     const railEndX = right - usableW * 0.045;
-    const railStartY = Math.max(26, H * 0.04);
-    const railEndY = railStartY + Math.max(36, H * 0.055);
+    const railStartY = Math.max(22, Math.min(34, H * 0.048));
+    const railEndY = railStartY + Math.max(24, Math.min(42, H * 0.058));
 
-    const knobsTop = railEndY + Math.max(36, H * 0.055);
-    const binsBottom = H - Math.max(66, H * 0.105);
-    const binsTop = binsBottom - Math.max(115, H * 0.185);
-    const knobsBottom = binsTop - Math.max(28, H * 0.042);
+    const knobsTop = railEndY + Math.max(24, Math.min(38, H * 0.055));
+    const binsBottom = H - Math.max(54, Math.min(72, H * 0.11));
+    const binsTop = binsBottom - Math.max(76, Math.min(125, H * 0.18));
+    const knobsBottom = binsTop - Math.max(20, Math.min(32, H * 0.045));
 
     state.boardBounds = {
       left,
@@ -561,10 +561,9 @@
     });
 
     // 8 filas escalonadas de ancho completo (alternando 11 y 12 knobs = 92 knobs).
-    // Así todas las zonas donde van cayendo las bolas (desde las rojas a la izq. hasta las violetas a la der.)
-    // tienen su correspondiente columna de knobs debajo.
     const numRows = 8;
-    const knobRadius = Math.max(8.0, Math.min(10.8, usableW * 0.0096));
+    const rowSpacingY = (knobsBottom - knobsTop) / (numRows - 1);
+    const knobRadius = Math.max(6.5, Math.min(10.5, usableW * 0.0094, rowSpacingY * 0.25));
 
     const previousKnobs = preserveWeights ? state.knobs : null;
     const newKnobs = [];
@@ -765,7 +764,9 @@
 
   function renderTokenChips() {
     const tokens = parsePromptTokens(promptInput.value);
-    tokenCountBadge.textContent = `${tokens.length} ${tokens.length === 1 ? "palabra" : "palabras"} · ${tokens.length * state.ballsPerWord} bolas`;
+    if (tokenCountBadge) {
+      tokenCountBadge.textContent = `${tokens.length} ${tokens.length === 1 ? "palabra" : "palabras"} · ${tokens.length * state.ballsPerWord} bolas`;
+    }
     tokenChipsContainer.innerHTML = "";
 
     tokens.forEach((tok) => {

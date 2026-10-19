@@ -8,48 +8,6 @@
 </head>
 <body>
   <div class="app-shell">
-    <!-- Top Header & Analogy Bar -->
-    <header class="top-header">
-      <div class="brand-block">
-        <div class="brand-badge" aria-hidden="true">
-          <span class="knob-icon"></span>
-        </div>
-        <div>
-          <h1>Galton-LLM <span class="subtitle-pill">Simulación Quasi-Física</span></h1>
-          <p class="header-desc">
-            Analogía mecánica de un LLM: cada <strong>palabra del prompt</strong> es una combinación de bolas de 6 tamaños (números decimales) que ruedan por una <strong>vía superior de dos carriles divergentes</strong>: las pequeñas caen antes y las grandes más adelante, activando <strong>todos los knobs</strong> hacia las <strong>24 palabras inferiores</strong>.
-          </p>
-        </div>
-      </div>
-
-      <div class="legend-strip" aria-label="Leyenda de 6 tamaños de bola (valores decimales)">
-        <div class="legend-item">
-          <span class="ball-sample ball-t1"></span>
-          <div><strong>0.15</strong><span>Roja (Cae 1.ª)</span></div>
-        </div>
-        <div class="legend-item">
-          <span class="ball-sample ball-t2"></span>
-          <div><strong>0.30</strong><span>Naranja (2.ª)</span></div>
-        </div>
-        <div class="legend-item">
-          <span class="ball-sample ball-t3"></span>
-          <div><strong>0.45</strong><span>Amarilla (3.ª)</span></div>
-        </div>
-        <div class="legend-item">
-          <span class="ball-sample ball-t4"></span>
-          <div><strong>0.62</strong><span>Verde (4.ª)</span></div>
-        </div>
-        <div class="legend-item">
-          <span class="ball-sample ball-t5"></span>
-          <div><strong>0.78</strong><span>Azul (5.ª)</span></div>
-        </div>
-        <div class="legend-item">
-          <span class="ball-sample ball-t6"></span>
-          <div><strong>0.95</strong><span>Violeta (6.ª)</span></div>
-        </div>
-      </div>
-    </header>
-
     <!-- Main Workspace: Left Controls + Center/Right Galton Machine -->
     <main class="workspace">
       <!-- Sidebar Controls -->
@@ -58,11 +16,8 @@
         <section class="panel-card">
           <div class="card-header">
             <span class="step-badge">1</span>
-            <h2>Prompt de Entrada (Vectores de Bolas)</h2>
+            <h2>Prompt de Entrada</h2>
           </div>
-          <p class="card-help">
-            Cada palabra es una <strong>combinación de diferentes bolas</strong> (números decimales). Al rodar por los <strong>dos carriles oblicuos superiores</strong> que se van separando, las bolas pequeñas (<strong style="color:#f87171">rojas</strong>) se cuelan al principio y las grandes (<strong style="color:#c084fc">violetas</strong>) al final.
-          </p>
 
           <label class="field-label" for="preset-prompt-select">Ejemplos de frases:</label>
           <select id="preset-prompt-select" class="control-select">
@@ -88,10 +43,6 @@
 
           <!-- Token chips preview with ball sizes -->
           <div class="token-preview-box">
-            <div class="token-preview-header">
-              <span>Combinación decimal por palabra (haz clic para lanzar):</span>
-              <span id="token-count-badge" class="badge-mini">5 palabras</span>
-            </div>
             <div id="token-chips-container" class="token-chips" aria-live="polite"></div>
           </div>
 
@@ -116,9 +67,6 @@
             <span class="step-badge">2</span>
             <h2>Estado de los Knobs (Pesos)</h2>
           </div>
-          <p class="card-help">
-            Los <strong>92 knobs</strong> (en 8 filas escalonadas de ancho completo) reciben bolas según el punto de la vía donde caen por su tamaño. Arrastra cualquier knob para girarlo:
-          </p>
 
           <div class="preset-buttons" role="group" aria-label="Presets de pesos de los knobs">
             <button id="preset-trained" type="button" class="preset-btn active" data-mode="trained">
