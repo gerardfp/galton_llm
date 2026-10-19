@@ -19,18 +19,20 @@
             <h2>Prompt de Entrada</h2>
           </div>
 
-          <label class="field-label" for="preset-prompt-select">Ejemplos de frases:</label>
-          <select id="preset-prompt-select" class="control-select">
-            <option value="el gato duerme en la">“el gato duerme en la” → (esperado: alfombra / cama)</option>
-            <option value="el sol brilla en el">“el sol brilla en el” → (esperado: cielo / mar)</option>
-            <option value="la red aprende con">“la red aprende con” → (esperado: datos / código)</option>
-            <option value="el perro corre por el">“el perro corre por el” → (esperado: bosque / jardín)</option>
-            <option value="un modelo predice la">“un modelo predice la” → (esperado: palabra / noche)</option>
-            <option value="la luna ilumina la">“la luna ilumina la” → (esperado: noche / ciudad)</option>
-          </select>
+          <div class="compact-field-row">
+            <label class="field-label" for="preset-prompt-select">Ejemplos:</label>
+            <select id="preset-prompt-select" class="control-select">
+              <option value="el gato duerme en la">“el gato duerme en la” → (alfombra / cama)</option>
+              <option value="el sol brilla en el">“el sol brilla en el” → (cielo / mar)</option>
+              <option value="la red aprende con">“la red aprende con” → (datos / código)</option>
+              <option value="el perro corre por el">“el perro corre por el” → (bosque / jardín)</option>
+              <option value="un modelo predice la">“un modelo predice la” → (palabra / noche)</option>
+              <option value="la luna ilumina la">“la luna ilumina la” → (noche / ciudad)</option>
+            </select>
+          </div>
 
-          <label class="field-label" for="prompt-input">Tu frase (prompt):</label>
-          <div class="prompt-input-row">
+          <div class="compact-field-row">
+            <label class="field-label" for="prompt-input">Tu frase:</label>
             <input
               id="prompt-input"
               type="text"
@@ -46,18 +48,16 @@
             <div id="token-chips-container" class="token-chips" aria-live="polite"></div>
           </div>
 
-          <div class="action-buttons">
-            <button id="btn-drop-burst" type="button" class="btn btn-primary">
-              ▶ Lanzar Frase por los Carriles
+          <div class="action-buttons-row3">
+            <button id="btn-drop-burst" type="button" class="btn btn-primary" title="Lanzar todas las palabras de la frase por los carriles">
+              ▶ Lanzar Frase
             </button>
-            <div class="btn-row-split">
-              <button id="btn-drop-single" type="button" class="btn btn-secondary" title="Lanza una versión compacta (3 bolas decimales por palabra)">
-                ● Vector Corto (3/pal.)
-              </button>
-              <button id="btn-clear-balls" type="button" class="btn btn-ghost" title="Vaciar las bolas y reiniciar el histograma">
-                ↺ Vaciar Cubetas
-              </button>
-            </div>
+            <button id="btn-drop-single" type="button" class="btn btn-secondary" title="Lanza una versión compacta (3 bolas decimales por palabra)">
+              ● Corto (3/pal.)
+            </button>
+            <button id="btn-clear-balls" type="button" class="btn btn-ghost" title="Vaciar las bolas y reiniciar el histograma">
+              ↺ Vaciar
+            </button>
           </div>
         </section>
 
@@ -69,43 +69,37 @@
           </div>
 
           <div class="preset-buttons" role="group" aria-label="Presets de pesos de los knobs">
-            <button id="preset-trained" type="button" class="preset-btn active" data-mode="trained">
-              <span class="preset-title">🎯 Pesos Entrenados</span>
-              <span class="preset-sub">Los knobs se orientan según el contexto del prompt para guiar las bolas hacia palabras con sentido.</span>
+            <button id="preset-trained" type="button" class="preset-btn active" data-mode="trained" title="Los knobs se orientan según el contexto del prompt para guiar las bolas hacia palabras con sentido.">
+              <span class="preset-title">🎯 Entrenados</span>
+              <span class="preset-sub">Guía con sentido</span>
             </button>
-            <button id="preset-random" type="button" class="preset-btn" data-mode="random">
-              <span class="preset-title">🎲 Pesos Aleatorios (Sin entrenar)</span>
-              <span class="preset-sub">Ángulos al azar: el modelo “alucina” y desvía las bolas hacia palabras incoherentes.</span>
+            <button id="preset-random" type="button" class="preset-btn" data-mode="random" title="Ángulos al azar: el modelo alucina y desvía las bolas hacia palabras incoherentes.">
+              <span class="preset-title">🎲 Aleatorios</span>
+              <span class="preset-sub">Sin entrenar</span>
             </button>
-            <button id="preset-neutral" type="button" class="preset-btn" data-mode="neutral">
-              <span class="preset-title">⚖️ Pesos Neutros (Galton 0°)</span>
-              <span class="preset-sub">Todos los knobs a 0. Distribución gaussiana clásica sin sesgo aprendido.</span>
+            <button id="preset-neutral" type="button" class="preset-btn" data-mode="neutral" title="Todos los knobs a 0. Distribución gaussiana clásica sin sesgo aprendido.">
+              <span class="preset-title">⚖️ Neutros 0°</span>
+              <span class="preset-sub">Gaussiana</span>
             </button>
           </div>
 
           <div class="sliders-group">
             <div class="slider-row">
-              <div class="slider-label-line">
-                <label for="balls-per-word-slider">Bolas decimales por palabra (Dimensión)</label>
-                <output id="balls-per-word-val" for="balls-per-word-slider">6</output>
-              </div>
+              <label for="balls-per-word-slider">Bolas / palabra</label>
               <input id="balls-per-word-slider" type="range" min="2" max="10" step="1" value="6" />
+              <output id="balls-per-word-val" for="balls-per-word-slider">6</output>
             </div>
 
             <div class="slider-row">
-              <div class="slider-label-line">
-                <label for="temperature-slider">Temperatura (Ruido / Vibración)</label>
-                <output id="temperature-val" for="temperature-slider">0.25</output>
-              </div>
+              <label for="temperature-slider">Temperatura</label>
               <input id="temperature-slider" type="range" min="0.02" max="1.0" step="0.02" value="0.25" />
+              <output id="temperature-val" for="temperature-slider">0.25</output>
             </div>
 
             <div class="slider-row">
-              <div class="slider-label-line">
-                <label for="knob-strength-slider">Fuerza de desvío de los Knobs</label>
-                <output id="knob-strength-val" for="knob-strength-slider">1.0×</output>
-              </div>
+              <label for="knob-strength-slider">Fuerza Knobs</label>
               <input id="knob-strength-slider" type="range" min="0.3" max="1.8" step="0.1" value="1.0" />
+              <output id="knob-strength-val" for="knob-strength-slider">1.0×</output>
             </div>
           </div>
         </section>
@@ -117,25 +111,23 @@
             <h2>Backpropagation (Entrenar Knobs)</h2>
           </div>
           <p class="card-help">
-            Indica qué palabra <strong>tendría que haber salido</strong> (o haz clic sobre ella en las cubetas inferiores). El algoritmo calculará el error y reajustará ligeramente los knobs que tocaron las bolas; también puedes girar cualquier knob a mano.
+            Elige qué palabra <strong>tendría que salir</strong> (o clica su cubeta) para reajustar los knobs:
           </p>
 
-          <div class="bp-target-row">
-            <label class="field-label" for="target-word-select">Palabra que debería salir (Objetivo <em>y*</em>):</label>
+          <div class="compact-field-row">
+            <label class="field-label" for="target-word-select">Objetivo (<em>y*</em>):</label>
             <select id="target-word-select" class="control-select bp-select"></select>
           </div>
 
           <div class="slider-row">
-            <div class="slider-label-line">
-              <label for="learning-rate-slider">Tasa de aprendizaje (Paso de ajuste <em>η</em>)</label>
-              <output id="learning-rate-val" for="learning-rate-slider">0.22</output>
-            </div>
+            <label for="learning-rate-slider">Tasa aprend. (<em>η</em>)</label>
             <input id="learning-rate-slider" type="range" min="0.05" max="0.60" step="0.01" value="0.22" />
+            <output id="learning-rate-val" for="learning-rate-slider">0.22</output>
           </div>
 
           <div class="bp-metrics-grid">
             <div class="bp-metric-box">
-              <span class="bp-metric-label">Épocas (Pasos)</span>
+              <span class="bp-metric-label">Épocas</span>
               <strong id="bp-epoch-count">0</strong>
             </div>
             <div class="bp-metric-box">
@@ -143,18 +135,18 @@
               <strong id="bp-loss-val">—</strong>
             </div>
             <div class="bp-metric-box">
-              <span class="bp-metric-label">Acierto en <em>y*</em></span>
+              <span class="bp-metric-label">Acierto <em>y*</em></span>
               <strong id="bp-target-prob">0%</strong>
             </div>
           </div>
 
           <div class="action-buttons">
             <button id="btn-backprop-step" type="button" class="btn btn-backprop">
-              ⚡ 1 Paso de Backprop (Reajustar Knobs + Probar)
+              ⚡ 1 Paso de Backprop (Reajustar + Probar)
             </button>
             <div class="btn-row-split">
               <button id="btn-backprop-nudge-only" type="button" class="btn btn-secondary" title="Reajusta ligeramente los knobs hacia la palabra objetivo sin lanzar nuevas bolas todavía">
-                🔧 Solo Reajustar Knobs
+                🔧 Solo Reajustar
               </button>
               <button id="btn-auto-train" type="button" class="btn btn-secondary" title="Ejecuta pasos sucesivos de lanzamiento y backpropagation hasta que gane la palabra objetivo">
                 🔁 Auto-Entrenar
@@ -163,7 +155,7 @@
           </div>
 
           <div id="bp-feedback-log" class="bp-feedback-log" aria-live="polite">
-            Selecciona una palabra objetivo y pulsa “1 Paso de Backprop” (o gira los knobs a mano).
+            Elige palabra objetivo y pulsa “1 Paso de Backprop” (o gira knobs a mano).
           </div>
         </section>
 
@@ -175,13 +167,15 @@
           </div>
 
           <div class="winner-box">
-            <div class="winner-label">Palabra con más bolas acumuladas:</div>
-            <div id="winner-word" class="winner-word">—</div>
-            <div id="winner-stats" class="winner-stats">Lanza las bolas para ver la distribución</div>
+            <div class="winner-box-top">
+              <span class="winner-label">Ganadora:</span>
+              <div id="winner-word" class="winner-word">—</div>
+            </div>
+            <div id="winner-stats" class="winner-stats">Lanza bolas para ver distribución</div>
           </div>
 
           <div class="sentence-preview">
-            <span class="sentence-label">Frase resultante:</span>
+            <span class="sentence-label">Frase:</span>
             <p id="completed-sentence" class="completed-sentence-text">
               <span class="prompt-part">el gato duerme en la</span>
               <span class="predicted-part">…</span>
@@ -189,7 +183,7 @@
           </div>
 
           <button id="btn-append-winner" type="button" class="btn btn-accent" disabled>
-            ➕ Añadir palabra ganadora al prompt y lanzar
+            ➕ Añadir ganadora al prompt y lanzar
           </button>
 
           <div class="top3-list" id="top3-candidates" aria-live="polite"></div>

@@ -918,7 +918,7 @@
 
     if (totalLanded === 0) {
       winnerWordEl.textContent = "—";
-      winnerStatsEl.textContent = "Lanza las bolas para ver la distribución";
+      winnerStatsEl.textContent = "Lanza bolas para ver distribución";
       completedSentenceEl.innerHTML = `<span class="prompt-part">${escapeHtml(promptText || "…")}</span> <span class="predicted-part">…</span>`;
       btnAppendWinner.disabled = true;
       top3CandidatesEl.innerHTML = "";
@@ -934,7 +934,7 @@
     const pct = Math.round((winner.count / totalLanded) * 100);
 
     winnerWordEl.textContent = `“${winner.word}”`;
-    winnerStatsEl.textContent = `${winner.count} de ${totalLanded} bolas (${pct}% · suma decimal ${winner.weightedScore.toFixed(1)})`;
+    winnerStatsEl.textContent = `${winner.count}/${totalLanded} bolas (${pct}% · Σ ${winner.weightedScore.toFixed(1)})`;
 
     completedSentenceEl.innerHTML = `<span class="prompt-part">${escapeHtml(promptText)}</span> <span class="predicted-part">${escapeHtml(winner.word)}</span>`;
     btnAppendWinner.disabled = false;
