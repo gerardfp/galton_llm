@@ -1,7 +1,16 @@
 https://gerardfp.github.io/galton_llm/
 
+> una web con una simulación quasi-física de una maquina tipo-galton que en lugar de clavos o pivotes tiene knobs. la máquina sirve como analogía primitiva a un llm. En la parte de arriba caen unas bolas de distintos tamaños que representan palabras. En la parte de abajo están todas las palabras posibles (unas 20 o 30)
+
+> ahora debe haber un sistema de backpropagation, en el que se puede decir a la máquina cual era la palabra que tendría que haber salido y entonces reajuste ligeramente los knobs para que pase (también lo puede hacer el usuario a mano)
+
+> Una palabra no debe ser todo bolas del mismo tamaño, sino una combinación de diferentes bolas. (Cada bola representa un número decimal) Debe haber bolas de 6 tamaños diferentes (rojo=pequeña, violeta=grande) Ahora mismo la bola amarilla es demasiado grande y a veces se queda encasquillada entre los knobs
+
+> quizá para que tenga más sentido las bolas no deberían caer todas del centro. Haremos en la parte superior via con dos carriles ligeramente oblicuos que cada vez se van separando más, de forma que las bola pequeñitas iran cayendo antes que las grandes. de esta forma todos los knobs tendrán influencia, y no necesitamos un único knob en la primera fila
+
+
 ---
- 
+
 > ahora no toques nada. creo que la analogía y la idea se entiende perfectamente.solo necesito saber una cosa. pero no la implementes solo explícamela: si ahora entreno el model (ajusto los knobs) para que la siguiente palabra de "el gato duerme en" sea "la", podría reajustar los knobs que la siguiente palabra después de "el gato duerme en la" sea "alfombra", manteniendo que la siguiente palabra de "el gato duerme en" sea "la"?
 
 
@@ -33,7 +42,7 @@ Para que un mismo conjunto de 180 knobs pueda responder `"la"` a la primera fras
    En vez de ajustar los knobs solo para una frase, el Backprop daría pequeños pasos alternando ambas reglas (`"el gato duerme en" → "la"` y `"el gato duerme en la" → "alfombra"`), de modo que los knobs por los que pasa la primera frase converjan hacia `"la"` y los knobs por los que pasa la segunda converjan hacia `"alfombra"`.
    
   
-
+---
 
 > dime si estoy en lo cierto, o si mi intución va bien encaminada: creo que cuando caen las bolas deberían mover un poco muy poco los knobs (más o menos dependiendo del tamaño de la bola), luego en el paso de backprop, y para el siguiente lanzamiento los knobs deben voler al estado que han quedado desúes del backprop
 
