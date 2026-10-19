@@ -17,6 +17,9 @@
           <div class="card-header">
             <span class="step-badge">1</span>
             <h2>Prompt de Entrada</h2>
+            <button id="btn-open-vocab" type="button" class="btn-vocab-trigger" title="Definir o editar las palabras del vocabulario inferior">
+              📚 Vocabulario (<span id="vocab-count-badge">24</span>)
+            </button>
           </div>
 
           <div class="compact-field-row">
@@ -192,28 +195,53 @@
 
       <!-- Main Galton Board Canvas Stage -->
       <section class="stage-panel" aria-label="Tablero de simulación Galton-LLM">
-        <div class="stage-topbar">
-          <div class="stage-status">
-            <span class="status-dot" id="sim-status-dot"></span>
-            <span id="sim-status-text">Listo — Haz clic en un knob y arrastra para rotar su peso</span>
-          </div>
-          <div class="stage-metrics">
-            <span class="metric-pill">Bolas en vuelo: <strong id="metric-active-balls">0</strong></span>
-            <span class="metric-pill">Bolas en cubetas: <strong id="metric-landed-balls">0</strong></span>
-            <span class="metric-pill" id="hovered-knob-pill">Knob: <strong>ninguno</strong></span>
-          </div>
-        </div>
-
         <div class="canvas-wrapper" id="canvas-wrapper">
           <canvas id="galton-canvas"></canvas>
-        </div>
-
-        <div class="stage-footer-hint">
-          <span>💡 <strong>Interacción manual y Backprop:</strong> Arrastra cualquier <strong>knob</strong> (o usa la rueda del ratón) para reajustarlo a mano. Haz <strong>clic en cualquiera de las 24 palabras inferiores</strong> para marcarla como <strong>palabra objetivo 🎯</strong> del Backpropagation.</span>
         </div>
       </section>
     </main>
   </div>
+
+  <!-- Vocabulary Definition Modal Dialog -->
+  <dialog id="vocab-dialog" class="vocab-dialog" closedby="any" aria-labelledby="vocab-dialog-title">
+    <form id="vocab-form" method="dialog" class="vocab-dialog-content">
+      <div class="vocab-dialog-header">
+        <div>
+          <h2 id="vocab-dialog-title">📚 Definir Vocabulario de Salida</h2>
+          <p class="vocab-dialog-sub">
+            Escribe las palabras posibles de la parte inferior (separadas por comas, espacios o saltos de línea):
+          </p>
+        </div>
+        <button id="btn-close-vocab-x" type="button" class="btn-dialog-close" aria-label="Cerrar diálogo">✕</button>
+      </div>
+
+      <textarea
+        id="vocab-textarea"
+        class="vocab-textarea"
+        rows="4"
+        spellcheck="false"
+        placeholder="el, la, gato, perro, duerme, corre, alfombra, cama..."
+      ></textarea>
+
+      <div class="vocab-dialog-meta">
+        <span id="vocab-dialog-count" class="vocab-count-pill">24 palabras detectadas</span>
+        <button id="btn-reset-vocab" type="button" class="btn btn-secondary btn-sm">
+          ↺ Restaurar 24 por defecto
+        </button>
+      </div>
+
+      <div class="vocab-preview-chips" id="vocab-dialog-chips"></div>
+
+      <div class="vocab-dialog-footer">
+        <button id="btn-cancel-vocab" type="button" class="btn btn-ghost">
+          Cancelar
+        </button>
+        <button id="btn-save-vocab" type="submit" class="btn btn-primary">
+          ✓ Guardar y Aplicar Vocabulario
+        </button>
+      </div>
+    </form>
+  </dialog>
 
   <script src="app.js"></script>
 </body>

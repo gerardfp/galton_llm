@@ -6,8 +6,8 @@
  */
 
 (() => {
-  // 24 palabras posibles en la parte inferior (Vocabulario de salida del LLM)
-  const VOCABULARY = [
+  // Palabras por defecto en la parte inferior (Vocabulario de salida del LLM)
+  const DEFAULT_VOCABULARY = [
     { word: "el", role: "conn" },
     { word: "la", role: "conn" },
     { word: "gato", role: "noun" },
@@ -33,6 +33,8 @@
     { word: "palabra", role: "noun" },
     { word: "ruido", role: "noun" }
   ];
+
+  let VOCABULARY = DEFAULT_VOCABULARY.map((item) => ({ ...item }));
 
   // 6 tamaños diferentes de bola (0 = Roja/Pequeña -> 5 = Violeta/Grande)
   const BALL_TIERS = [
@@ -259,6 +261,18 @@
   const metricLandedBalls = document.getElementById("metric-landed-balls");
   const hoveredKnobPill = document.getElementById("hovered-knob-pill");
 
+  // Controles del diálogo de Vocabulario
+  const btnOpenVocab = document.getElementById("btn-open-vocab");
+  const vocabCountBadge = document.getElementById("vocab-count-badge");
+  const vocabDialog = document.getElementById("vocab-dialog");
+  const vocabForm = document.getElementById("vocab-form");
+  const vocabTextarea = document.getElementById("vocab-textarea");
+  const vocabDialogCount = document.getElementById("vocab-dialog-count");
+  const vocabDialogChips = document.getElementById("vocab-dialog-chips");
+  const btnResetVocab = document.getElementById("btn-reset-vocab");
+  const btnCancelVocab = document.getElementById("btn-cancel-vocab");
+  const btnCloseVocabX = document.getElementById("btn-close-vocab-x");
+
   // Estado de la simulación
   const state = {
     width: 960,
@@ -454,49 +468,49 @@
       if (allMatched) {
         const filtered = rule.targets.filter((t) => t.word !== lastWord);
         const list = filtered.length > 0 ? filtered : rule.targets;
-        return list
+        const found = list
           .map((t) => ({
             binIndex: VOCABULARY.findIndex((v) => v.word === t.word),
             weight: t.weight,
             word: t.word
           }))
           .filter((t) => t.binIndex >= 0);
+        if (found.length > 0) return found;
       }
     }
 
+    let candidates = [];
     if (lastWord === "la" || lastWord === "una") {
-      const femCandidates = ["alfombra", "cama", "noche", "ciudad", "palabra", "casa"];
-      const hash = words.join("").length % femCandidates.length;
-      const primary = femCandidates[hash];
-      const secondary = femCandidates[(hash + 2) % femCandidates.length];
+      candidates = ["alfombra", "cama", "noche", "ciudad", "palabra", "casa"];
+    } else if (lastWord === "el" || lastWord === "un" || lastWord === "al" || lastWord === "del") {
+      candidates = ["cielo", "bosque", "mar", "jardín", "código", "modelo"];
+    } else if (!CONNECTORS.has(lastWord)) {
+      candidates = ["duerme", "brilla", "corre"];
+    } else {
+      candidates = ["palabra", "datos"];
+    }
+
+    const available = candidates
+      .map((w) => ({ word: w, binIndex: VOCABULARY.findIndex((v) => v.word === w) }))
+      .filter((item) => item.binIndex >= 0);
+
+    if (available.length > 0) {
+      const hash = words.join("").length % available.length;
+      const p = available[hash];
+      const s = available[(hash + 1) % available.length];
       return [
-        { binIndex: VOCABULARY.findIndex((v) => v.word === primary), weight: 1.0, word: primary },
-        { binIndex: VOCABULARY.findIndex((v) => v.word === secondary), weight: 0.55, word: secondary }
+        { binIndex: p.binIndex, weight: 1.0, word: p.word },
+        { binIndex: s.binIndex, weight: 0.6, word: s.word }
       ];
     }
 
-    if (lastWord === "el" || lastWord === "un" || lastWord === "al" || lastWord === "del") {
-      const mascCandidates = ["cielo", "bosque", "mar", "jardín", "código", "modelo"];
-      const hash = words.join("").length % mascCandidates.length;
-      const primary = mascCandidates[hash];
-      const secondary = mascCandidates[(hash + 1) % mascCandidates.length];
-      return [
-        { binIndex: VOCABULARY.findIndex((v) => v.word === primary), weight: 1.0, word: primary },
-        { binIndex: VOCABULARY.findIndex((v) => v.word === secondary), weight: 0.55, word: secondary }
-      ];
-    }
-
-    if (!CONNECTORS.has(lastWord)) {
-      return [
-        { binIndex: VOCABULARY.findIndex((v) => v.word === "duerme"), weight: 0.9, word: "duerme" },
-        { binIndex: VOCABULARY.findIndex((v) => v.word === "brilla"), weight: 0.65, word: "brilla" },
-        { binIndex: VOCABULARY.findIndex((v) => v.word === "corre"), weight: 0.5, word: "corre" }
-      ];
-    }
-
+    // Fallback determinista para vocabularios personalizados
+    const n = Math.max(1, VOCABULARY.length);
+    const idx1 = words.join("").length % n;
+    const idx2 = (idx1 + Math.max(1, Math.floor(n / 3))) % n;
     return [
-      { binIndex: VOCABULARY.findIndex((v) => v.word === "palabra"), weight: 1.0, word: "palabra" },
-      { binIndex: VOCABULARY.findIndex((v) => v.word === "datos"), weight: 0.6, word: "datos" }
+      { binIndex: idx1, weight: 1.0, word: VOCABULARY[idx1]?.word || "" },
+      { binIndex: idx2, weight: 0.6, word: VOCABULARY[idx2]?.word || "" }
     ];
   }
 
@@ -516,7 +530,7 @@
 
   /**
    * Construye la geometría de la vía oblicua superior de 2 carriles divergentes,
-   * las 8 filas escalonadas de ancho completo (92 knobs) y las 24 cubetas inferiores.
+   * las 8 filas escalonadas de ancho completo (22/23 knobs por fila = 180 knobs) y las 24 cubetas inferiores.
    */
   function layoutBoard(preserveWeights = false) {
     const W = state.width;
@@ -538,6 +552,13 @@
     const binsTop = binsBottom - Math.max(76, Math.min(125, H * 0.18));
     const knobsBottom = binsTop - Math.max(20, Math.min(32, H * 0.045));
 
+    // 8 filas escalonadas de ancho completo con el doble de knobs por fila (alternando 22 y 23 knobs = 180 knobs).
+    const numRows = 8;
+    const rowSpacingY = (knobsBottom - knobsTop) / (numRows - 1);
+    const baseSpan = usableW * 0.90;
+    const stepX = baseSpan / 21; // distancia entre knobs de una fila de 22
+    const knobRadius = Math.max(4.6, Math.min(7.4, stepX * 0.195, rowSpacingY * 0.22));
+
     state.boardBounds = {
       left,
       right,
@@ -548,7 +569,9 @@
       knobsTop,
       knobsBottom,
       binsTop,
-      binsBottom
+      binsBottom,
+      knobStepX: stepX,
+      knobRadius
     };
 
     // Actualizar las 24 cubetas inferiores
@@ -560,21 +583,13 @@
       bin.xCenter = bin.xLeft + binWidth * 0.5;
     });
 
-    // 8 filas escalonadas de ancho completo (alternando 11 y 12 knobs = 92 knobs).
-    const numRows = 8;
-    const rowSpacingY = (knobsBottom - knobsTop) / (numRows - 1);
-    const knobRadius = Math.max(6.5, Math.min(10.5, usableW * 0.0094, rowSpacingY * 0.25));
-
     const previousKnobs = preserveWeights ? state.knobs : null;
     const newKnobs = [];
     let globalIdx = 0;
 
-    const baseSpan = usableW * 0.86;
-    const stepX = baseSpan / 10; // distancia entre knobs de una fila de 11
-
     for (let r = 0; r < numRows; r++) {
       const isOddRow = r % 2 === 1;
-      const count = isOddRow ? 12 : 11;
+      const count = isOddRow ? 23 : 22;
       const tRow = numRows === 1 ? 0 : r / (numRows - 1);
       const y = knobsTop + tRow * (knobsBottom - knobsTop);
 
@@ -835,13 +850,18 @@
    * Instancia una bola en el inicio izquierdo de la vía superior de dos carriles divergentes
    */
   function spawnBallFromQueue(item) {
-    const { railStartX, railStartY } = state.boardBounds;
+    const { railStartX, railStartY, knobStepX, knobRadius } = state.boardBounds;
     const usableW = state.boardBounds.right - state.boardBounds.left;
 
-    const r = Math.max(
+    // Espacio libre entre las superficies de dos knobs vecinos en una misma fila
+    const clearGap = Math.max(14, (knobStepX || 32) - 2 * (knobRadius || 6));
+    const maxSafeRadiusForTier = clearGap * (0.21 + (item.tier / 5) * 0.21);
+
+    const baseR = Math.max(
       item.spec.minRadius,
       Math.min(item.spec.maxRadius, usableW * item.spec.radiusRatio)
     );
+    const r = Math.min(baseR, maxSafeRadiusForTier);
 
     const dropX = computeDropXForBall(item.decimal, item.tokenIndex, item.totalTokens);
 
@@ -893,8 +913,12 @@
     const promptText = promptInput.value.trim();
     const totalLanded = state.bins.reduce((acc, b) => acc + b.count, 0);
 
-    metricActiveBalls.textContent = String(state.balls.length + state.spawnQueue.length);
-    metricLandedBalls.textContent = String(totalLanded);
+    if (metricActiveBalls) {
+      metricActiveBalls.textContent = String(state.balls.length + state.spawnQueue.length);
+    }
+    if (metricLandedBalls) {
+      metricLandedBalls.textContent = String(totalLanded);
+    }
 
     const targetBin = state.bins[state.backpropTargetBinIndex];
     if (totalLanded === 0 || !targetBin) {
@@ -967,7 +991,10 @@
 
   function updateStatusUI() {
     const activeCount = state.balls.length + state.spawnQueue.length;
-    metricActiveBalls.textContent = String(activeCount);
+    if (metricActiveBalls) {
+      metricActiveBalls.textContent = String(activeCount);
+    }
+    if (!simStatusDot || !simStatusText) return;
 
     if (activeCount > 0) {
       simStatusDot.classList.add("busy");
@@ -1236,9 +1263,8 @@
     const H = state.height;
     ctx.clearRect(0, 0, W, H);
 
-    const { left, knobsTop, knobsBottom, binsTop, binsBottom } = state.boardBounds;
+    const { knobsTop, binsTop, binsBottom } = state.boardBounds;
 
-    drawLayerGuides(left, knobsTop, knobsBottom);
     drawDivergingRails();
     drawBackpropTargetGuide(knobsTop, binsTop);
     drawVocabularyBins(binsTop, binsBottom);
@@ -1251,31 +1277,6 @@
     for (const ball of state.balls) {
       drawFallingBall(ball);
     }
-  }
-
-  function drawLayerGuides(left, knobsTop, knobsBottom) {
-    ctx.save();
-    ctx.font = "600 10px system-ui, sans-serif";
-    ctx.fillStyle = "rgba(148, 163, 184, 0.42)";
-    ctx.textAlign = "left";
-
-    const labels = [
-      { y: knobsTop, text: "FILA 1 · ENTRADA DISTRIBUIDA POR CALIBRE DECIMAL" },
-      { y: (knobsTop + knobsBottom) * 0.5, text: "FILAS 2–7 · MATRIZ DE PESOS (92 KNOBS)" },
-      { y: knobsBottom, text: "FILA 8 · PROYECCIÓN A LAS 24 PALABRAS" }
-    ];
-
-    labels.forEach((lbl) => {
-      ctx.beginPath();
-      ctx.strokeStyle = "rgba(51, 65, 85, 0.35)";
-      ctx.setLineDash([4, 6]);
-      ctx.moveTo(left, lbl.y);
-      ctx.lineTo(state.boardBounds.right, lbl.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillText(lbl.text, left + 4, lbl.y - 6);
-    });
-    ctx.restore();
   }
 
   /**
@@ -1699,15 +1700,19 @@
   }
 
   function findKnobAt(x, y) {
+    let bestKnob = null;
+    let bestDistSq = Infinity;
     for (const knob of state.knobs) {
       const dx = x - knob.x;
       const dy = y - knob.y;
-      const hitR = knob.radius + 7;
-      if (dx * dx + dy * dy <= hitR * hitR) {
-        return knob;
+      const hitR = knob.radius + 5.5;
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= hitR * hitR && distSq < bestDistSq) {
+        bestDistSq = distSq;
+        bestKnob = knob;
       }
     }
-    return null;
+    return bestKnob;
   }
 
   function findBinAt(x, y) {
@@ -1721,6 +1726,7 @@
   }
 
   function updateHoveredKnobUI(knob) {
+    if (!hoveredKnobPill) return;
     if (!knob) {
       hoveredKnobPill.innerHTML = `Knob: <strong>ninguno</strong>`;
       return;
@@ -1932,6 +1938,142 @@
     btnAutoTrain.textContent = "⏹ Detener Auto-Entreno";
     performBackpropStep(true);
   });
+
+  // Gestión del diálogo para definir el Vocabulario de Salida
+  const VERB_HINTS = new Set([
+    "duerme", "corre", "brilla", "aprende", "predice", "ilumina",
+    "canta", "salta", "vuela", "piensa", "habla", "escribe", "lee", "juega"
+  ]);
+
+  function inferWordRole(w) {
+    if (CONNECTORS.has(w)) return "conn";
+    if (VERB_HINTS.has(w)) return "verb";
+    return "noun";
+  }
+
+  function parseVocabInput(rawText) {
+    const parts = rawText
+      .split(/[,;\n\r\t]+|\s+/)
+      .map((s) => s.replace(/[."'!¡?¿()[\]{}]/g, "").trim().toLowerCase())
+      .filter(Boolean);
+
+    const unique = [];
+    const seen = new Set();
+    for (const w of parts) {
+      if (!seen.has(w)) {
+        seen.add(w);
+        unique.push(w);
+      }
+      if (unique.length >= 40) break;
+    }
+    return unique;
+  }
+
+  function updateVocabDialogPreview() {
+    if (!vocabTextarea || !vocabDialogCount || !vocabDialogChips) return;
+    const words = parseVocabInput(vocabTextarea.value);
+    vocabDialogCount.textContent = `${words.length} ${words.length === 1 ? "palabra detectada" : "palabras detectadas"} (mín. 4 · máx. 40)`;
+    vocabDialogChips.innerHTML = words
+      .map((w, idx) => `<span class="vocab-chip-item">#${idx + 1} ${escapeHtml(w)}</span>`)
+      .join("");
+  }
+
+  function applyVocabularyWords(wordList) {
+    if (wordList.length < 4) return false;
+    stopAutoTrain();
+
+    VOCABULARY = wordList.map((w) => ({
+      word: w,
+      role: inferWordRole(w)
+    }));
+
+    state.bins = VOCABULARY.map((item, index) => ({
+      index,
+      word: item.word,
+      role: item.role,
+      count: 0,
+      weightedScore: 0,
+      settledBalls: [],
+      xLeft: 0,
+      xRight: 0,
+      xCenter: 0,
+      flash: 0
+    }));
+
+    if (state.backpropTargetBinIndex >= VOCABULARY.length) {
+      state.backpropTargetBinIndex = 0;
+    }
+
+    if (vocabCountBadge) {
+      vocabCountBadge.textContent = String(VOCABULARY.length);
+    }
+
+    initTargetWordSelect();
+    layoutBoard(false);
+    clearBallsAndBins();
+    renderTokenChips();
+    if (state.targetBinsInfo.length > 0) {
+      setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
+    }
+    triggerBurstDrop();
+    return true;
+  }
+
+  if (btnOpenVocab && vocabDialog) {
+    btnOpenVocab.addEventListener("click", () => {
+      vocabTextarea.value = VOCABULARY.map((v) => v.word).join(", ");
+      updateVocabDialogPreview();
+      vocabDialog.showModal();
+    });
+
+    vocabTextarea.addEventListener("input", updateVocabDialogPreview);
+
+    if (btnResetVocab) {
+      btnResetVocab.addEventListener("click", () => {
+        vocabTextarea.value = DEFAULT_VOCABULARY.map((v) => v.word).join(", ");
+        updateVocabDialogPreview();
+      });
+    }
+
+    if (btnCancelVocab) {
+      btnCancelVocab.addEventListener("click", () => {
+        vocabDialog.close();
+      });
+    }
+
+    if (btnCloseVocabX) {
+      btnCloseVocabX.addEventListener("click", () => {
+        vocabDialog.close();
+      });
+    }
+
+    if (vocabForm) {
+      vocabForm.addEventListener("submit", (evt) => {
+        const words = parseVocabInput(vocabTextarea.value);
+        if (words.length < 4) {
+          evt.preventDefault();
+          vocabDialogCount.textContent = "⚠️ Introduce al menos 4 palabras distintas";
+          return;
+        }
+        applyVocabularyWords(words);
+      });
+    }
+
+    // Fallback para navegadores sin soporte nativo de <dialog closedby="any">
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      vocabDialog.addEventListener("click", (event) => {
+        if (event.target !== vocabDialog) return;
+        const rect = vocabDialog.getBoundingClientRect();
+        const isDialogContent =
+          rect.top <= event.clientY &&
+          event.clientY <= rect.top + rect.height &&
+          rect.left <= event.clientX &&
+          event.clientX <= rect.left + rect.width;
+        if (isDialogContent) return;
+        vocabDialog.close();
+      });
+    }
+  }
 
   const canvasWrapper = document.getElementById("canvas-wrapper");
   const resizeObserver = new ResizeObserver((entries) => {
