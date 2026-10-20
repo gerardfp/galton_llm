@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Galton-LLM — Máquina de Knobs y Palabras</title>
+  <title>Galton-LLM — Knobs &amp; Words Machine</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -17,8 +17,8 @@
           <div class="card-header">
             <span class="step-badge">1</span>
             <h2>Prompt (Tokens)</h2>
-            <button id="btn-open-examples" type="button" class="btn-vocab-trigger" title="Seleccionar una frase de ejemplo">
-              📋 Ejemplos
+            <button id="btn-open-examples" type="button" class="btn-vocab-trigger" title="Select an example prompt">
+              📋 Examples
             </button>
           </div>
 
@@ -28,8 +28,8 @@
               id="prompt-input"
               type="text"
               class="control-input"
-              value="el gato duerme en la"
-              placeholder="Ej: el gato duerme en la"
+              value="the cat sat on the"
+              placeholder="e.g. the cat sat on the"
               autocomplete="off"
             />
           </div>
@@ -41,14 +41,14 @@
 
           <div class="sliders-group">
             <div class="slider-row">
-              <label for="balls-per-word-slider">Bolas / palabra</label>
+              <label for="balls-per-word-slider">Balls / word</label>
               <input id="balls-per-word-slider" type="range" min="2" max="10" step="1" value="6" />
               <output id="balls-per-word-val" for="balls-per-word-slider">6</output>
             </div>
           </div>
 
-          <button id="btn-drop-burst" type="button" class="btn btn-primary btn-section-bottom" title="Vaciar el tablero y lanzar los vectores de bolas de la frase">
-            ▶ Lanzar Frase
+          <button id="btn-drop-burst" type="button" class="btn btn-primary btn-section-bottom" title="Clear board and launch the ball vectors for this prompt">
+            ▶ Launch Prompt
           </button>
         </section>
 
@@ -57,31 +57,31 @@
           <div class="card-header">
             <span class="step-badge step-badge-bp">2</span>
             <h2>Backpropagation</h2>
-            <button id="bp-memory-badge" type="button" class="bp-memory-badge" title="Haz clic para editar o añadir reglas de entrenamiento (ej. el sol brilla en el: cielo)">
-              🧠 0 reglas
+            <button id="bp-memory-badge" type="button" class="bp-memory-badge" title="Click to edit or add training rules (e.g. the cat sat on the: mat)">
+              🧠 0 rules
             </button>
           </div>
 
           <div class="compact-field-row">
-            <label class="field-label" for="target-word-select">Objetivo (<em>y*</em>):</label>
+            <label class="field-label" for="target-word-select">Target (<em>y*</em>):</label>
             <select id="target-word-select" class="control-select bp-select"></select>
           </div>
 
           <div class="sliders-group">
             <div class="slider-row">
-              <label for="learning-rate-slider">Tasa aprend. (<em>η</em>)</label>
+              <label for="learning-rate-slider">Learning rate (<em>η</em>)</label>
               <input id="learning-rate-slider" type="range" min="0.05" max="0.60" step="0.01" value="0.22" />
               <output id="learning-rate-val" for="learning-rate-slider">0.22</output>
             </div>
 
             <div class="slider-row">
-              <label for="knob-strength-slider">Fuerza Knobs</label>
+              <label for="knob-strength-slider">Knob Strength</label>
               <input id="knob-strength-slider" type="range" min="0.3" max="1.8" step="0.1" value="1.0" />
               <output id="knob-strength-val" for="knob-strength-slider">1.0×</output>
             </div>
 
-            <div class="slider-row" title="Resistencia de los knobs a ser movidos cuando chocan las bolas (100% = rígidos, 0% = ceden al peso de la bola)">
-              <label for="knob-resistance-slider">Resistencia Knobs</label>
+            <div class="slider-row" title="Knob resistance to being nudged when hit by falling balls (100% = rigid, 0% = yields easily to ball weight)">
+              <label for="knob-resistance-slider">Knob Resistance</label>
               <input id="knob-resistance-slider" type="range" min="0.0" max="1.0" step="0.05" value="0.75" />
               <output id="knob-resistance-val" for="knob-resistance-slider">75%</output>
             </div>
@@ -89,7 +89,7 @@
 
           <div class="bp-metrics-grid">
             <div class="bp-metric-box">
-              <span class="bp-metric-label">Épocas</span>
+              <span class="bp-metric-label">Epochs</span>
               <strong id="bp-epoch-count">0</strong>
             </div>
             <div class="bp-metric-box">
@@ -97,7 +97,7 @@
               <strong id="bp-loss-val">—</strong>
             </div>
             <div class="bp-metric-box">
-              <span class="bp-metric-label">Acierto <em>y*</em></span>
+              <span class="bp-metric-label">Hit <em>y*</em></span>
               <strong id="bp-target-prob">0%</strong>
             </div>
           </div>
@@ -105,14 +105,14 @@
           <div class="bp-memory-container">
             <div class="bp-memory-header">
               <div id="bp-memory-strip" class="bp-memory-strip" aria-live="polite">
-                <span class="bp-memory-empty">Sin reglas aún</span>
+                <span class="bp-memory-empty">No rules yet</span>
               </div>
-              <button id="btn-auto-train" type="button" class="btn btn-secondary btn-sm bp-autotrain-btn" title="Recorre uno por uno los elementos de la memoria entrenando los knobs hasta que todos acierten">
+              <button id="btn-auto-train" type="button" class="btn btn-secondary btn-sm bp-autotrain-btn" title="Step through each rule in memory training the knobs until all rules converge">
                 🔁 Auto-Train
               </button>
             </div>
             <div id="bp-feedback-log" class="bp-feedback-log" aria-live="polite">
-              Pulsa “▶ Lanzar Frase” o entrena con “⚡ Backprop”.
+              Click “▶ Launch Prompt” or train with “⚡ Backprop”.
             </div>
           </div>
 
@@ -121,26 +121,26 @@
           </button>
         </section>
 
-        <!-- Section 3: Predicción -->
+        <!-- Section 3: Prediction -->
         <section class="panel-card prediction-card">
           <div class="card-header">
             <span class="step-badge">3</span>
-            <h2>Predicción (Output)</h2>
-            <button id="btn-open-vocab" type="button" class="btn-vocab-trigger" title="Definir o editar las palabras del vocabulario inferior">
-              📚 Vocabulario (<span id="vocab-count-badge">24</span>)
+            <h2>Prediction (Output)</h2>
+            <button id="btn-open-vocab" type="button" class="btn-vocab-trigger" title="Define or edit the bottom output vocabulary words">
+              📚 Vocabulary (<span id="vocab-count-badge">24</span>)
             </button>
           </div>
 
           <div class="sentence-preview">
-            <span class="sentence-label">Frase:</span>
+            <span class="sentence-label">Sentence:</span>
             <p id="completed-sentence" class="completed-sentence-text">
-              <span class="prompt-part">el gato duerme en la</span>
+              <span class="prompt-part">the cat sat on the</span>
               <span class="predicted-part">…</span>
             </p>
           </div>
 
           <div class="slider-row">
-            <label for="temperature-slider">Temperatura (<em>T</em>)</label>
+            <label for="temperature-slider">Temperature (<em>T</em>)</label>
             <input id="temperature-slider" type="range" min="0.02" max="1.0" step="0.02" value="0.25" />
             <output id="temperature-val" for="temperature-slider">0.25</output>
           </div>
@@ -163,23 +163,23 @@
             </div>
           </div>
 
-          <button id="btn-append-winner" type="button" class="btn btn-accent btn-section-bottom" disabled title="Escoge una palabra entre las Top-3 al azar según la Temperatura y la añade al prompt">
-            ➕ Añadir Ganadora
+          <button id="btn-append-winner" type="button" class="btn btn-accent btn-section-bottom" disabled title="Sample one word from the Top-3 according to Temperature and append it to the prompt">
+            ➕ Append Winner
           </button>
         </section>
       </aside>
 
       <!-- Main Galton Board Canvas Stage -->
-      <section class="stage-panel" aria-label="Tablero de simulación Galton-LLM">
+      <section class="stage-panel" aria-label="Galton-LLM simulation board">
         <div class="canvas-wrapper" id="canvas-wrapper">
           <canvas id="galton-canvas"></canvas>
           <div class="stage-top-right-overlay">
-            <div class="sim-speed-overlay" title="Velocidad de simulación física">
-              <label for="sim-speed-slider">⏱ Vel.</label>
+            <div class="sim-speed-overlay" title="Physics simulation speed">
+              <label for="sim-speed-slider">⏱ Speed</label>
               <input id="sim-speed-slider" type="range" min="0.2" max="10.0" step="0.2" value="1.0" />
               <output id="sim-speed-val" for="sim-speed-slider">1.0×</output>
             </div>
-            <button id="btn-open-config" type="button" class="btn-config-overlay" title="Configuración de la máquina (Knobs y Estado)" aria-label="Configuración">
+            <button id="btn-open-config" type="button" class="btn-config-overlay" title="Machine Configuration (Canvas, Rows/Knobs &amp; State)" aria-label="Configuration">
               ⚙️
             </button>
           </div>
@@ -193,44 +193,79 @@
     <div class="vocab-dialog-content">
       <div class="vocab-dialog-header">
         <div>
-          <h2 id="config-dialog-title">⚙️ Configuración de la Máquina</h2>
+          <h2 id="config-dialog-title">⚙️ Machine Configuration</h2>
           <p class="vocab-dialog-sub">
-            Inicializa los 180 knobs o guarda y restaura el estado completo de la máquina:
+            Configure canvas dimensions, rows &amp; knobs per row, knob presets, or save/load the full machine state:
           </p>
         </div>
-        <button id="btn-close-config-x" type="button" class="btn-dialog-close" aria-label="Cerrar diálogo">✕</button>
+        <button id="btn-close-config-x" type="button" class="btn-dialog-close" aria-label="Close dialog">✕</button>
       </div>
 
       <div class="config-section-block">
-        <span class="config-section-label">Disposición de los Knobs (Pesos):</span>
-        <div class="preset-buttons config-preset-buttons" role="group" aria-label="Presets de pesos de los knobs">
-          <button id="preset-random" type="button" class="preset-btn" data-mode="random" title="Pesos aleatorios sin entrenar">
-            <span class="preset-title">🎲 Knobs Aleatorios</span>
+        <div class="config-row-header">
+          <span class="config-section-label">Canvas Size (px) &amp; Knobs per Row (comma-separated):</span>
+          <span id="config-rows-summary" class="vocab-count-pill">8 rows · 180 knobs</span>
+        </div>
+
+        <div class="config-canvas-size-row">
+          <label class="config-inline-label" for="config-canvas-width">Width:</label>
+          <input id="config-canvas-width" type="number" class="control-input config-num-input" min="480" max="1920" step="10" value="960" />
+          <span class="config-x-sep">×</span>
+          <label class="config-inline-label" for="config-canvas-height">Height:</label>
+          <input id="config-canvas-height" type="number" class="control-input config-num-input" min="420" max="1400" step="10" value="700" />
+          <button id="btn-canvas-autofit" type="button" class="btn btn-secondary btn-sm" title="Fit canvas automatically to available panel space">
+            ↔ Fit Window
           </button>
-          <button id="preset-neutral" type="button" class="preset-btn" data-mode="neutral" title="Todos los knobs a 0° (distribución gaussiana)">
-            <span class="preset-title">⚖️ Knobs Neutros (0°)</span>
+        </div>
+
+        <div class="config-rows-input-row">
+          <input
+            id="config-rows-input"
+            type="text"
+            class="control-input"
+            value="22, 23, 22, 23, 22, 23, 22, 23"
+            placeholder="e.g. 22, 23, 22, 23, 22, 23, 22, 23"
+            spellcheck="false"
+          />
+          <button id="btn-auto-rows" type="button" class="btn btn-secondary btn-sm" title="Automatically set recommended rows and knobs/row for the selected canvas size">
+            ↺ Auto
+          </button>
+          <button id="btn-apply-geometry" type="button" class="btn btn-primary btn-sm" title="Apply canvas dimensions and row/knob layout">
+            ✓ Apply
           </button>
         </div>
       </div>
 
       <div class="config-section-block">
-        <span class="config-section-label">Estado de la Máquina (Pesos, Bolas/palabra, Tasa, Fuerza, Resistencia, Temperatura y Vocabulario):</span>
-        <div class="btn-row-split">
-          <button id="btn-save-state" type="button" class="btn btn-primary" title="Guardar el estado completo de la máquina">
-            💾 Guardar Estado
+        <span class="config-section-label">Knob Weight Initialization:</span>
+        <div class="preset-buttons config-preset-buttons" role="group" aria-label="Knob weight presets">
+          <button id="preset-random" type="button" class="preset-btn" data-mode="random" title="Untrained random weights">
+            <span class="preset-title">🎲 Random Knobs</span>
           </button>
-          <button id="btn-load-state" type="button" class="btn btn-secondary" title="Cargar el último estado guardado de la máquina">
-            📂 Cargar Estado
+          <button id="preset-neutral" type="button" class="preset-btn" data-mode="neutral" title="All knobs at 0° (Gaussian distribution)">
+            <span class="preset-title">⚖️ Neutral Knobs (0°)</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="config-section-block">
+        <span class="config-section-label">Machine State (Weights, Rows, Balls/word, LR, Strength, Resistance, Temp &amp; Vocab):</span>
+        <div class="btn-row-split">
+          <button id="btn-save-state" type="button" class="btn btn-primary" title="Save complete machine state">
+            💾 Save State
+          </button>
+          <button id="btn-load-state" type="button" class="btn btn-secondary" title="Load last saved machine state">
+            📂 Load State
           </button>
         </div>
         <div id="config-state-feedback" class="config-state-feedback" aria-live="polite">
-          Guarda una instantánea completa de los parámetros actuales o cárgala cuando quieras.
+          Save a full snapshot of the current machine parameters or restore it anytime.
         </div>
       </div>
 
       <div class="vocab-dialog-footer">
         <button id="btn-close-config" type="button" class="btn btn-ghost">
-          Cerrar
+          Close
         </button>
       </div>
     </div>
@@ -241,44 +276,44 @@
     <div class="vocab-dialog-content">
       <div class="vocab-dialog-header">
         <div>
-          <h2 id="examples-dialog-title">📋 Seleccionar Ejemplo de Prompt</h2>
+          <h2 id="examples-dialog-title">📋 Select Example Prompt</h2>
           <p class="vocab-dialog-sub">
-            Elige una frase de entrada para cargarla en la sección Prompt:
+            Choose an input phrase to load into the Prompt section:
           </p>
         </div>
-        <button id="btn-close-examples-x" type="button" class="btn-dialog-close" aria-label="Cerrar diálogo">✕</button>
+        <button id="btn-close-examples-x" type="button" class="btn-dialog-close" aria-label="Close dialog">✕</button>
       </div>
 
       <div class="examples-list" id="examples-list">
-        <button type="button" class="example-item-btn" data-prompt="el gato duerme en la">
-          <span class="example-prompt-text">“el gato duerme en la”</span>
-          <span class="example-target-hint">→ alfombra / cama</span>
+        <button type="button" class="example-item-btn" data-prompt="the cat sat on the">
+          <span class="example-prompt-text">“the cat sat on the”</span>
+          <span class="example-target-hint">→ mat / bag</span>
         </button>
-        <button type="button" class="example-item-btn" data-prompt="el sol brilla en el">
-          <span class="example-prompt-text">“el sol brilla en el”</span>
-          <span class="example-target-hint">→ cielo / mar</span>
+        <button type="button" class="example-item-btn" data-prompt="the dog ran to the">
+          <span class="example-prompt-text">“the dog ran to the”</span>
+          <span class="example-target-hint">→ man / boy</span>
         </button>
-        <button type="button" class="example-item-btn" data-prompt="la red aprende con">
-          <span class="example-prompt-text">“la red aprende con”</span>
-          <span class="example-target-hint">→ datos / código</span>
+        <button type="button" class="example-item-btn" data-prompt="the sun is">
+          <span class="example-prompt-text">“the sun is”</span>
+          <span class="example-target-hint">→ hot / big</span>
         </button>
-        <button type="button" class="example-item-btn" data-prompt="el perro corre por el">
-          <span class="example-prompt-text">“el perro corre por el”</span>
-          <span class="example-target-hint">→ bosque / jardín</span>
+        <button type="button" class="example-item-btn" data-prompt="the boy has a red">
+          <span class="example-prompt-text">“the boy has a red”</span>
+          <span class="example-target-hint">→ hat / bag</span>
         </button>
-        <button type="button" class="example-item-btn" data-prompt="un modelo predice la">
-          <span class="example-prompt-text">“un modelo predice la”</span>
-          <span class="example-target-hint">→ palabra / noche</span>
+        <button type="button" class="example-item-btn" data-prompt="the girl has a blue">
+          <span class="example-prompt-text">“the girl has a blue”</span>
+          <span class="example-target-hint">→ bag / hat</span>
         </button>
-        <button type="button" class="example-item-btn" data-prompt="la luna ilumina la">
-          <span class="example-prompt-text">“la luna ilumina la”</span>
-          <span class="example-target-hint">→ noche / ciudad</span>
+        <button type="button" class="example-item-btn" data-prompt="a big fish is in the">
+          <span class="example-prompt-text">“a big fish is in the”</span>
+          <span class="example-target-hint">→ bag / sun</span>
         </button>
       </div>
 
       <div class="vocab-dialog-footer">
         <button id="btn-close-examples" type="button" class="btn btn-ghost">
-          Cancelar
+          Cancel
         </button>
       </div>
     </div>
@@ -289,12 +324,12 @@
     <form id="vocab-form" method="dialog" class="vocab-dialog-content">
       <div class="vocab-dialog-header">
         <div>
-          <h2 id="vocab-dialog-title">📚 Definir Vocabulario de Salida</h2>
+          <h2 id="vocab-dialog-title">📚 Define Output Vocabulary</h2>
           <p class="vocab-dialog-sub">
-            Escribe las palabras posibles de la parte inferior (separadas por comas, espacios o saltos de línea):
+            Enter the candidate output words for the bottom bins (separated by commas, spaces, or newlines):
           </p>
         </div>
-        <button id="btn-close-vocab-x" type="button" class="btn-dialog-close" aria-label="Cerrar diálogo">✕</button>
+        <button id="btn-close-vocab-x" type="button" class="btn-dialog-close" aria-label="Close dialog">✕</button>
       </div>
 
       <textarea
@@ -302,13 +337,13 @@
         class="vocab-textarea"
         rows="4"
         spellcheck="false"
-        placeholder="el, la, gato, perro, duerme, corre, alfombra, cama..."
+        placeholder="the, cat, sat, on, mat, dog, fish, ran..."
       ></textarea>
 
       <div class="vocab-dialog-meta">
-        <span id="vocab-dialog-count" class="vocab-count-pill">24 palabras detectadas</span>
+        <span id="vocab-dialog-count" class="vocab-count-pill">24 words detected</span>
         <button id="btn-reset-vocab" type="button" class="btn btn-secondary btn-sm">
-          ↺ Restaurar 24 por defecto
+          ↺ Restore default 24
         </button>
       </div>
 
@@ -316,10 +351,10 @@
 
       <div class="vocab-dialog-footer">
         <button id="btn-cancel-vocab" type="button" class="btn btn-ghost">
-          Cancelar
+          Cancel
         </button>
         <button id="btn-save-vocab" type="submit" class="btn btn-primary">
-          ✓ Guardar y Aplicar Vocabulario
+          ✓ Save &amp; Apply Vocabulary
         </button>
       </div>
     </form>
@@ -330,12 +365,12 @@
     <form id="rules-form" method="dialog" class="vocab-dialog-content">
       <div class="vocab-dialog-header">
         <div>
-          <h2 id="rules-dialog-title">🧠 Definir Reglas de Entrenamiento</h2>
+          <h2 id="rules-dialog-title">🧠 Define Training Rules</h2>
           <p class="vocab-dialog-sub">
-            Escribe una regla por línea con el formato <strong>frase: palabra_objetivo</strong>:
+            Enter one rule per line in the format <strong>prompt: target_word</strong>:
           </p>
         </div>
-        <button id="btn-close-rules-x" type="button" class="btn-dialog-close" aria-label="Cerrar diálogo">✕</button>
+        <button id="btn-close-rules-x" type="button" class="btn-dialog-close" aria-label="Close dialog">✕</button>
       </div>
 
       <textarea
@@ -343,17 +378,17 @@
         class="vocab-textarea"
         rows="6"
         spellcheck="false"
-        placeholder="el sol brilla en el: cielo&#10;el perro corre por el: bosque"
+        placeholder="the cat sat on the: mat&#10;the dog ran to the: man"
       ></textarea>
 
       <div class="vocab-dialog-meta">
-        <span id="rules-dialog-count" class="vocab-count-pill">0 reglas detectadas</span>
+        <span id="rules-dialog-count" class="vocab-count-pill">0 rules detected</span>
         <div class="rules-dialog-actions">
           <button id="btn-add-all-examples" type="button" class="btn btn-secondary btn-sm">
-            ➕ Añadir todos los ejemplos
+            ➕ Add all examples
           </button>
           <button id="btn-clear-rules" type="button" class="btn btn-ghost btn-sm">
-            🗑 Vaciar
+            🗑 Clear
           </button>
         </div>
       </div>
@@ -362,10 +397,10 @@
 
       <div class="vocab-dialog-footer">
         <button id="btn-cancel-rules" type="button" class="btn btn-ghost">
-          Cancelar
+          Cancel
         </button>
         <button id="btn-save-rules" type="submit" class="btn btn-primary">
-          ✓ Guardar Reglas en Memoria
+          ✓ Save Rules to Memory
         </button>
       </div>
     </form>

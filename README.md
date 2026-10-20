@@ -56,6 +56,6 @@ De hecho, acabas de describir la diferencia fundamental que existe en una red ne
 ### 2. En el Backpropagation y en el siguiente lanzamiento: Pesos base ($W_{\text{base}}$)
 * Ese pequeño movimiento causado por el golpe de las bolas es solo una **perturbación temporal de esa tirada** (no es aprendizaje permanente).
 * Cuando ejecutas el paso de **Backpropagation**, el algoritmo corrige el **estado base ($W_{\text{base}}$)** de los knobs según el error respecto a la palabra objetivo $y^*$.
-* Y cada vez que lanzas una frase nueva (o tras el Backprop), los knobs **recuperan exactamente el estado base en el que quedaron tras el último Backprop**, limpios del "empujón temporal" de las bolas del turno anterior.
+* Y cada vez que lanzas una frase nueva (o tras el Backprop), los knobs **recuperan exactamente el estado base en el que quedaron tras el último Backprop**, limpios del "empujón temporal" de las bolas del turno anterior.  
 
 ¿Quieres que lo implementemos así en la máquina (que cada knob tenga su peso base post-Backprop, que el choque de cada bola lo desvíe un poquito según su masa/tamaño durante la tirada, y que al lanzar de nuevo vuelva a su estado post-Backprop)?

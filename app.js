@@ -1,46 +1,46 @@
 /**
- * Galton-LLM — Simulación Quasi-Física de Máquina de Galton con Knobs y Backpropagation
- * En la parte superior hay una vía con dos carriles ligeramente oblicuos que se van separando:
- * las bolas pequeñas (rojas) caen antes por la abertura entre carriles y las grandes (violetas) caen más adelante,
- * haciendo que todos los knobs de todas las filas tengan influencia real.
+ * Galton-LLM — Quasi-Physical Galton Machine Simulation with Knobs & Backpropagation
+ * At the top, two diverging oblique rails guide the balls:
+ * smaller balls (Red) drop earlier through the gap between rails while larger balls (Violet) drop further right,
+ * giving all knobs across all rows real influence over the output distribution.
  */
 
 (() => {
-  // Palabras por defecto en la parte inferior (Vocabulario de salida del LLM)
+  // Default bottom output vocabulary (24 basic English words)
   const DEFAULT_VOCABULARY = [
-    { word: "el", role: "conn" },
-    { word: "la", role: "conn" },
-    { word: "gato", role: "noun" },
-    { word: "perro", role: "noun" },
-    { word: "duerme", role: "verb" },
-    { word: "corre", role: "verb" },
-    { word: "alfombra", role: "noun" },
-    { word: "cama", role: "noun" },
-    { word: "casa", role: "noun" },
-    { word: "sol", role: "noun" },
-    { word: "luna", role: "noun" },
-    { word: "brilla", role: "verb" },
-    { word: "cielo", role: "noun" },
-    { word: "mar", role: "noun" },
-    { word: "noche", role: "noun" },
-    { word: "ciudad", role: "noun" },
-    { word: "bosque", role: "noun" },
-    { word: "jardín", role: "noun" },
+    { word: "the", role: "conn" },
+    { word: "a", role: "conn" },
+    { word: "is", role: "verb" },
+    { word: "in", role: "conn" },
+    { word: "on", role: "conn" },
+    { word: "to", role: "conn" },
+    { word: "has", role: "verb" },
+    { word: "cat", role: "noun" },
+    { word: "dog", role: "noun" },
+    { word: "fish", role: "noun" },
+    { word: "boy", role: "noun" },
+    { word: "girl", role: "noun" },
+    { word: "man", role: "noun" },
+    { word: "sun", role: "noun" },
+    { word: "sat", role: "verb" },
+    { word: "ran", role: "verb" },
+    { word: "big", role: "noun" },
     { word: "red", role: "noun" },
-    { word: "modelo", role: "noun" },
-    { word: "datos", role: "noun" },
-    { word: "código", role: "noun" },
-    { word: "palabra", role: "noun" },
-    { word: "ruido", role: "noun" }
+    { word: "blue", role: "noun" },
+    { word: "hot", role: "noun" },
+    { word: "mat", role: "noun" },
+    { word: "hat", role: "noun" },
+    { word: "bag", role: "noun" },
+    { word: "bed", role: "noun" }
   ];
 
   let VOCABULARY = DEFAULT_VOCABULARY.map((item) => ({ ...item }));
 
-  // 6 tamaños diferentes de bola (0 = Roja/Pequeña -> 5 = Violeta/Grande)
+  // 6 ball size/color tiers (0 = Red/Small -> 5 = Violet/Large)
   const BALL_TIERS = [
     {
       tier: 0,
-      name: "Roja",
+      name: "Red",
       sampleDecimal: "0.15",
       radiusRatio: 0.0045,
       minRadius: 3.9,
@@ -54,7 +54,7 @@
     },
     {
       tier: 1,
-      name: "Naranja",
+      name: "Orange",
       sampleDecimal: "0.30",
       radiusRatio: 0.0053,
       minRadius: 4.6,
@@ -68,7 +68,7 @@
     },
     {
       tier: 2,
-      name: "Amarilla",
+      name: "Yellow",
       sampleDecimal: "0.45",
       radiusRatio: 0.0061,
       minRadius: 5.3,
@@ -82,7 +82,7 @@
     },
     {
       tier: 3,
-      name: "Verde",
+      name: "Green",
       sampleDecimal: "0.62",
       radiusRatio: 0.0069,
       minRadius: 6.0,
@@ -96,7 +96,7 @@
     },
     {
       tier: 4,
-      name: "Azul",
+      name: "Blue",
       sampleDecimal: "0.78",
       radiusRatio: 0.0078,
       minRadius: 6.7,
@@ -110,7 +110,7 @@
     },
     {
       tier: 5,
-      name: "Violeta",
+      name: "Violet",
       sampleDecimal: "0.95",
       radiusRatio: 0.0087,
       minRadius: 7.5,
@@ -125,94 +125,86 @@
   ];
 
   const CONNECTORS = new Set([
-    "el", "la", "los", "las", "un", "una", "unos", "unas",
-    "en", "de", "con", "por", "para", "sin", "sobre", "tras",
-    "a", "al", "del", "y", "e", "o", "u", "que", "se", "su", "mi", "tu", "es", "son"
+    "the", "a", "an", "in", "on", "with", "through", "by", "for", "from",
+    "to", "of", "at", "into", "over", "after", "and", "or", "that", "its",
+    "my", "your"
   ]);
 
-  // Asociaciones semánticas de un "LLM entrenado"
+  // Semantic associations of a "pre-trained LLM"
   const SEMANTIC_RULES = [
     {
-      match: ["gato", "duerme"],
+      match: ["cat", "sat"],
       targets: [
-        { word: "alfombra", weight: 1.0 },
-        { word: "cama", weight: 0.65 },
-        { word: "casa", weight: 0.35 }
+        { word: "mat", weight: 1.0 },
+        { word: "bag", weight: 0.65 },
+        { word: "bed", weight: 0.35 }
       ]
     },
     {
-      match: ["gato"],
+      match: ["cat"],
       targets: [
-        { word: "duerme", weight: 0.85 },
-        { word: "alfombra", weight: 0.7 },
-        { word: "noche", weight: 0.4 }
+        { word: "sat", weight: 0.85 },
+        { word: "mat", weight: 0.7 },
+        { word: "bed", weight: 0.4 }
       ]
     },
     {
-      match: ["sol", "brilla"],
+      match: ["dog", "ran"],
       targets: [
-        { word: "cielo", weight: 1.0 },
-        { word: "mar", weight: 0.65 },
-        { word: "ciudad", weight: 0.3 }
+        { word: "man", weight: 1.0 },
+        { word: "boy", weight: 0.75 },
+        { word: "girl", weight: 0.35 }
       ]
     },
     {
-      match: ["sol"],
+      match: ["dog"],
       targets: [
-        { word: "brilla", weight: 0.9 },
-        { word: "cielo", weight: 0.75 }
+        { word: "ran", weight: 0.9 },
+        { word: "man", weight: 0.7 }
       ]
     },
     {
-      match: ["red", "aprende"],
+      match: ["sun", "is"],
       targets: [
-        { word: "datos", weight: 1.0 },
-        { word: "código", weight: 0.65 },
-        { word: "palabra", weight: 0.4 }
+        { word: "hot", weight: 1.0 },
+        { word: "big", weight: 0.65 },
+        { word: "red", weight: 0.3 }
       ]
     },
     {
-      match: ["perro", "corre"],
+      match: ["sun"],
       targets: [
-        { word: "bosque", weight: 1.0 },
-        { word: "jardín", weight: 0.75 },
-        { word: "casa", weight: 0.35 }
+        { word: "is", weight: 0.9 },
+        { word: "hot", weight: 0.75 }
       ]
     },
     {
-      match: ["perro"],
+      match: ["boy", "red"],
       targets: [
-        { word: "corre", weight: 0.9 },
-        { word: "jardín", weight: 0.7 }
+        { word: "hat", weight: 1.0 },
+        { word: "bag", weight: 0.65 },
+        { word: "mat", weight: 0.4 }
       ]
     },
     {
-      match: ["modelo", "predice"],
+      match: ["girl", "blue"],
       targets: [
-        { word: "palabra", weight: 1.0 },
-        { word: "datos", weight: 0.55 },
-        { word: "código", weight: 0.4 }
+        { word: "bag", weight: 1.0 },
+        { word: "hat", weight: 0.65 },
+        { word: "bed", weight: 0.4 }
       ]
     },
     {
-      match: ["luna", "ilumina"],
+      match: ["fish", "in"],
       targets: [
-        { word: "noche", weight: 1.0 },
-        { word: "ciudad", weight: 0.65 },
-        { word: "mar", weight: 0.5 }
-      ]
-    },
-    {
-      match: ["luna"],
-      targets: [
-        { word: "noche", weight: 0.95 },
-        { word: "brilla", weight: 0.7 },
-        { word: "cielo", weight: 0.5 }
+        { word: "bag", weight: 1.0 },
+        { word: "sun", weight: 0.55 },
+        { word: "hat", weight: 0.4 }
       ]
     }
   ];
 
-  // Referencias al DOM
+  // DOM References
   const canvas = document.getElementById("galton-canvas");
   const ctx = canvas.getContext("2d");
   const presetPromptSelect = document.getElementById("preset-prompt-select");
@@ -242,7 +234,7 @@
   const simSpeedSlider = document.getElementById("sim-speed-slider");
   const simSpeedVal = document.getElementById("sim-speed-val");
 
-  // Controles de Backpropagation
+  // Backpropagation Controls
   const targetWordSelect = document.getElementById("target-word-select");
   const learningRateSlider = document.getElementById("learning-rate-slider");
   const learningRateVal = document.getElementById("learning-rate-val");
@@ -267,7 +259,7 @@
   const metricLandedBalls = document.getElementById("metric-landed-balls");
   const hoveredKnobPill = document.getElementById("hovered-knob-pill");
 
-  // Controles del diálogo de Vocabulario
+  // Vocabulary Dialog Controls
   const btnOpenVocab = document.getElementById("btn-open-vocab");
   const vocabCountBadge = document.getElementById("vocab-count-badge");
   const vocabDialog = document.getElementById("vocab-dialog");
@@ -279,7 +271,7 @@
   const btnCancelVocab = document.getElementById("btn-cancel-vocab");
   const btnCloseVocabX = document.getElementById("btn-close-vocab-x");
 
-  // Controles del diálogo de Reglas de Entrenamiento
+  // Training Rules Dialog Controls
   const rulesDialog = document.getElementById("rules-dialog");
   const rulesForm = document.getElementById("rules-form");
   const rulesTextarea = document.getElementById("rules-textarea");
@@ -290,11 +282,14 @@
   const btnCancelRules = document.getElementById("btn-cancel-rules");
   const btnCloseRulesX = document.getElementById("btn-close-rules-x");
 
-  // Estado de la simulación
+  // Simulation State
   const state = {
     width: 960,
     height: 700,
     dpr: 1,
+    customCanvasSize: null, // null = auto-fit window, or { width, height }
+    rowCounts: [22, 23, 22, 23, 22, 23, 22, 23],
+    customRowCounts: false,
     mode: "trained", // 'trained' | 'random' | 'neutral' | 'custom'
     ballsPerWord: 6,
     temperature: 0.25,
@@ -302,20 +297,20 @@
     knobResistance: 0.75,
     simSpeed: 1.0,
     learningRate: 0.22,
-    backpropTargetBinIndex: 6, // 'alfombra'
+    backpropTargetBinIndex: 20, // 'mat'
     bpEpochs: 0,
     autoTraining: false,
     autoTrainPendingStep: false,
     autoTrainIndex: 0,
     autoTrainPassSuccessCount: 0,
-    trainedPrompts: new Map(), // Memoria de frases entrenadas: promptKey -> { promptKey, targetBinIndex, knobWeights: Map, epochs, converged }
+    trainedPrompts: new Map(), // Trained prompt memory: promptKey -> { promptKey, targetBinIndex, knobWeights: Map, epochs, converged }
     knobs: [],
     balls: [],
     spawnQueue: [],
     spawnTimer: 0,
     landedHistory: [],
     bpPulses: [],
-    railDropRings: [], // destellos cuando una bola se cuela entre los dos carriles
+    railDropRings: [],
     bins: VOCABULARY.map((item, index) => ({
       index,
       word: item.word,
@@ -497,12 +492,36 @@
     return railStartX + tDrop * trackLen;
   }
 
+  function computeRecommendedRowCounts(width, height) {
+    if (width >= 800 && height >= 600) {
+      return [22, 23, 22, 23, 22, 23, 22, 23];
+    }
+    const baseKnobs =
+      width >= 800 ? 22 : Math.max(8, Math.min(22, Math.floor((width * 0.88) / 32)));
+    const numRows =
+      height >= 600 ? 8 : Math.max(4, Math.min(8, Math.floor((height * 0.5) / 38)));
+    const counts = [];
+    for (let r = 0; r < numRows; r++) {
+      counts.push(r % 2 === 1 ? baseKnobs + 1 : baseKnobs);
+    }
+    return counts;
+  }
+
+  function parseRowCountsString(rawText) {
+    const parts = (rawText || "")
+      .split(/[,;\s]+/)
+      .map((s) => parseInt(s.trim(), 10))
+      .filter((n) => Number.isFinite(n) && n >= 2);
+    if (parts.length === 0) return null;
+    return parts.slice(0, 16).map((n) => Math.max(2, Math.min(45, n)));
+  }
+
   function initTargetWordSelect() {
     targetWordSelect.innerHTML = "";
     VOCABULARY.forEach((item, index) => {
       const opt = document.createElement("option");
       opt.value = String(index);
-      opt.textContent = `🎯 “${item.word}” (Cubeta #${index + 1})`;
+      opt.textContent = `🎯 “${item.word}” (Bin #${index + 1})`;
       targetWordSelect.appendChild(opt);
     });
     targetWordSelect.value = String(state.backpropTargetBinIndex);
@@ -516,7 +535,7 @@
 
     if (announce) {
       const targetWord = VOCABULARY[binIndex].word;
-      bpFeedbackLog.innerHTML = `Palabra objetivo fijada en <strong>“${escapeHtml(targetWord)}”</strong>. Pulsa <em>1 Paso de Backprop</em> para reajustar los knobs hacia ella.${renderTrainedMemoryStripHtml()}`;
+      bpFeedbackLog.innerHTML = `Target word set to <strong>“${escapeHtml(targetWord)}”</strong>. Click <em>⚡ Backprop</em> to adjust knobs toward it.${renderTrainedMemoryStripHtml()}`;
     }
   }
 
@@ -563,14 +582,12 @@
     }
 
     let candidates = [];
-    if (lastWord === "la" || lastWord === "una") {
-      candidates = ["alfombra", "cama", "noche", "ciudad", "palabra", "casa"];
-    } else if (lastWord === "el" || lastWord === "un" || lastWord === "al" || lastWord === "del") {
-      candidates = ["cielo", "bosque", "mar", "jardín", "código", "modelo"];
+    if (lastWord === "the" || lastWord === "a" || lastWord === "an") {
+      candidates = ["mat", "hat", "bag", "bed", "cat", "dog", "sun", "man"];
     } else if (!CONNECTORS.has(lastWord)) {
-      candidates = ["duerme", "brilla", "corre"];
+      candidates = ["sat", "ran", "is", "has"];
     } else {
-      candidates = ["palabra", "datos"];
+      candidates = ["mat", "bag", "hat", "bed"];
     }
 
     const available = candidates
@@ -587,7 +604,7 @@
       ];
     }
 
-    // Fallback determinista para vocabularios personalizados
+    // Deterministic fallback for custom vocabularies
     const n = Math.max(1, VOCABULARY.length);
     const idx1 = words.join("").length % n;
     const idx2 = (idx1 + Math.max(1, Math.floor(n / 3))) % n;
@@ -598,12 +615,13 @@
   }
 
   /**
-   * Calcula el peso ideal w* en [-0.95, 0.95] para que un knob situado en knob.x
-   * guíe tanto las bolas pequeñas (que caen por la izquierda) como las grandes (por la derecha) hacia targetX
+   * Computes the ideal weight w* in [-0.95, 0.95] so a knob at knob.x
+   * steers balls toward targetX
    */
   function computeIdealKnobWeightForTargetX(knob, targetX) {
     const usableW = state.boardBounds.right - state.boardBounds.left;
-    const layerProgress = knob.row / 7;
+    const maxRowIdx = Math.max(1, (state.rowCounts?.length || 8) - 1);
+    const layerProgress = knob.row / maxRowIdx;
     const dx = targetX - knob.x;
     const normalizedDelta = dx / (usableW * 0.25);
     const focusGain = 0.78 + layerProgress * 0.45;
@@ -612,8 +630,8 @@
   }
 
   /**
-   * Construye la geometría de la vía oblicua superior de 2 carriles divergentes,
-   * las 8 filas escalonadas de ancho completo (22/23 knobs por fila = 180 knobs) y las 24 cubetas inferiores.
+   * Builds the geometry of the top diverging rails, the staggered rows of knobs
+   * according to state.rowCounts, and the bottom vocabulary bins.
    */
   function layoutBoard(preserveWeights = false) {
     const W = state.width;
@@ -624,7 +642,7 @@
     const right = W - marginX;
     const usableW = right - left;
 
-    // Vía superior con ligera pendiente hacia la derecha (escalada proporcionalmente a la altura H)
+    // Top oblique rail track scaled to canvas height H
     const railStartX = left + usableW * 0.045;
     const railEndX = right - usableW * 0.045;
     const railStartY = Math.max(22, Math.min(34, H * 0.048));
@@ -635,12 +653,20 @@
     const binsTop = binsBottom - Math.max(76, Math.min(125, H * 0.18));
     const knobsBottom = binsTop - Math.max(20, Math.min(32, H * 0.045));
 
-    // 8 filas escalonadas de ancho completo con el doble de knobs por fila (alternando 22 y 23 knobs = 180 knobs).
-    const numRows = 8;
-    const rowSpacingY = (knobsBottom - knobsTop) / (numRows - 1);
+    const rowCounts =
+      Array.isArray(state.rowCounts) && state.rowCounts.length > 0
+        ? state.rowCounts
+        : [22, 23, 22, 23, 22, 23, 22, 23];
+    const numRows = rowCounts.length;
+    const maxRowCount = Math.max(...rowCounts);
+    const minRowCount = Math.min(...rowCounts);
+    const refCount = maxRowCount - minRowCount === 1 ? minRowCount : maxRowCount;
+
+    const rowSpacingY =
+      numRows > 1 ? (knobsBottom - knobsTop) / (numRows - 1) : knobsBottom - knobsTop;
     const baseSpan = usableW * 0.90;
-    const stepX = baseSpan / 21; // distancia entre knobs de una fila de 22
-    const knobRadius = Math.max(4.6, Math.min(7.4, stepX * 0.195, rowSpacingY * 0.22));
+    const stepX = baseSpan / Math.max(1, refCount - 1);
+    const knobRadius = Math.max(4.2, Math.min(7.4, stepX * 0.195, rowSpacingY * 0.22));
 
     state.boardBounds = {
       left,
@@ -657,7 +683,7 @@
       knobRadius
     };
 
-    // Actualizar las 24 cubetas inferiores
+    // Update bottom vocabulary bins
     const numBins = VOCABULARY.length;
     const binWidth = usableW / numBins;
     state.bins.forEach((bin, i) => {
@@ -671,13 +697,16 @@
     let globalIdx = 0;
 
     for (let r = 0; r < numRows; r++) {
-      const isOddRow = r % 2 === 1;
-      const count = isOddRow ? 23 : 22;
-      const tRow = numRows === 1 ? 0 : r / (numRows - 1);
+      const count = rowCounts[r];
+      const tRow = numRows === 1 ? 0.5 : r / (numRows - 1);
       const y = knobsTop + tRow * (knobsBottom - knobsTop);
 
       const rowSpan = (count - 1) * stepX;
-      const rowLeft = W * 0.5 - rowSpan * 0.5;
+      // If adjacent rows have the same parity, stagger odd rows by ±0.25 * stepX
+      const prevCount = r > 0 ? rowCounts[r - 1] : count + 1;
+      const sameParityAsPrev = count % 2 === prevCount % 2;
+      const parityStagger = sameParityAsPrev ? (r % 2 === 1 ? 0.25 : -0.25) * stepX : 0;
+      const rowLeft = W * 0.5 - rowSpan * 0.5 + parityStagger;
 
       for (let c = 0; c < count; c++) {
         const x = rowLeft + c * stepX;
@@ -710,8 +739,7 @@
   }
 
   /**
-   * Devuelve todos los knobs exactamente al estado base en el que quedaron tras el último Backprop
-   * (eliminando las pequeñas desviaciones temporales producidas por el choque de las bolas en la tirada anterior).
+   * Returns all knobs to their post-Backprop base weight (clearing temporary ball collision nudges).
    */
   function resetKnobsToBaseWeights() {
     for (const knob of state.knobs) {
@@ -722,7 +750,7 @@
   function updateMemoryBadgeUI() {
     if (bpMemoryBadge) {
       const n = state.trainedPrompts.size;
-      bpMemoryBadge.textContent = `🧠 ${n} ${n === 1 ? "regla" : "reglas"}`;
+      bpMemoryBadge.textContent = `🧠 ${n} ${n === 1 ? "rule" : "rules"}`;
     }
     renderTrainedMemoryStripHtml();
   }
@@ -730,7 +758,7 @@
   function renderTrainedMemoryStripHtml() {
     if (!bpMemoryStrip) return "";
     if (state.trainedPrompts.size === 0) {
-      bpMemoryStrip.innerHTML = `<span class="bp-memory-empty">Sin reglas guardadas aún</span>`;
+      bpMemoryStrip.innerHTML = `<span class="bp-memory-empty">No rules yet</span>`;
       return "";
     }
     const activeKey = getNormalizedPromptKey(promptInput.value);
@@ -741,7 +769,7 @@
       const isCurrent = pKey === activeKey;
       const statusPrefix = entry.converged ? "✓ " : isCurrent ? "● " : "";
       chips.push(
-        `<button type="button" class="bp-memory-chip${isCurrent ? " active-rule" : ""}" data-prompt="${escapeHtml(pKey)}" title="Haz clic para probar la frase entrenada: “${escapeHtml(pKey)}” → “${escapeHtml(targetW)}”">${statusPrefix}“${escapeHtml(shortPrompt)}” → <strong>${escapeHtml(targetW)}</strong></button>`
+        `<button type="button" class="bp-memory-chip${isCurrent ? " active-rule" : ""}" data-prompt="${escapeHtml(pKey)}" title="Click to test trained rule: “${escapeHtml(pKey)}” → “${escapeHtml(targetW)}”">${statusPrefix}“${escapeHtml(shortPrompt)}” → <strong>${escapeHtml(targetW)}</strong></button>`
       );
     }
     bpMemoryStrip.innerHTML = chips.join("");
@@ -749,8 +777,8 @@
   }
 
   /**
-   * Sincroniza los pesos base de los knobs combinando todas las frases entrenadas en memoria
-   * y dando prioridad en los cruces compartidos al contexto de la frase activa.
+   * Synchronizes base knob weights combining all trained rules in memory,
+   * prioritizing the active prompt's pathway at shared intersections.
    */
   function syncContextualKnobsForPrompt(promptKey) {
     if (state.trainedPrompts.size === 0) {
@@ -758,7 +786,6 @@
       return;
     }
 
-    // 1. Aplicar los caminos aprendidos de todas las demás frases en memoria
     for (const [otherKey, entry] of state.trainedPrompts.entries()) {
       if (otherKey === promptKey) continue;
       for (const [kId, wVal] of entry.knobWeights.entries()) {
@@ -769,7 +796,6 @@
       }
     }
 
-    // 2. Superponer los knobs del camino específico de la frase activa (resuelve cruces compartidos)
     const activeEntry = state.trainedPrompts.get(promptKey);
     if (activeEntry) {
       for (const [kId, wVal] of activeEntry.knobWeights.entries()) {
@@ -780,7 +806,6 @@
       }
     }
 
-    // Restaurar cualquier desviación de choque al estado base post-Backprop
     resetKnobsToBaseWeights();
   }
 
@@ -826,9 +851,10 @@
 
       const primaryX = state.bins[primaryTarget.binIndex]?.xCenter ?? state.width * 0.5;
       const secondaryX = state.bins[secondaryTarget.binIndex]?.xCenter ?? primaryX;
+      const halfRow = Math.floor((state.rowCounts?.length || 8) * 0.4);
 
       state.knobs.forEach((knob) => {
-        const targetX = knob.col % 5 === 0 && knob.row >= 3 ? secondaryX : primaryX;
+        const targetX = knob.col % 5 === 0 && knob.row >= halfRow ? secondaryX : primaryX;
         const idealW = computeIdealKnobWeightForTargetX(knob, targetX);
         const w = Math.round(idealW * 100) / 100;
         knob.baseWeight = w;
@@ -843,9 +869,7 @@
   }
 
   /**
-   * Ejecuta un paso de Backpropagation con Memoria Contextual Multi-Frase:
-   * Parte del estado base post-Backprop anterior (knob.baseWeight), lo reajusta ligeramente hacia
-   * la palabra objetivo (y*) y deja todos los knobs listos en ese nuevo estado base para el siguiente lanzamiento.
+   * Executes one step of Backpropagation with Multi-Prompt Contextual Memory.
    */
   function performBackpropStep(launchAfter = true) {
     const targetBin = state.bins[state.backpropTargetBinIndex];
@@ -858,7 +882,7 @@
     const targetX = targetBin.xCenter;
     const lr = state.learningRate;
 
-    // 1. Devolver todos los knobs a su estado base post-Backprop (descartando el empujón temporal de las bolas)
+    // 1. Return all knobs to their post-Backprop base state
     syncContextualKnobsForPrompt(promptKey);
 
     let memEntry = state.trainedPrompts.get(promptKey);
@@ -876,7 +900,6 @@
     memEntry.epochs += 1;
     updateMemoryBadgeUI();
 
-    // Calcular centro medio de caída en el carril superior para esta frase contextualizada
     let sumDropX = 0;
     let countDropX = 0;
     tokens.forEach((tok, idx) => {
@@ -909,13 +932,13 @@
 
     let adjustedCount = 0;
     let sumAbsDelta = 0;
+    const maxRowIdx = Math.max(1, (state.rowCounts?.length || 8) - 1);
 
     state.knobs.forEach((knob) => {
-      const layerProgress = knob.row / 7;
+      const layerProgress = knob.row / maxRowIdx;
       const touchInfo = knobStats.get(knob.id);
       const wasTouched = Boolean(touchInfo && touchInfo.touches > 0);
 
-      // Corredor localizado desde la zona de caída de la frase actual hasta la cubeta objetivo targetX
       const corridorCenterX =
         promptDropCenterX * (1 - layerProgress * 0.85) + targetX * (layerProgress * 0.85);
       const corridorHalfWidth = usableW * (0.18 - layerProgress * 0.035);
@@ -954,7 +977,7 @@
         knob.baseWeight = roundedW;
         knob.weight = roundedW;
         knob.lastDelta = actualDelta;
-        knob.bpDelay = (7 - knob.row) * 0.045;
+        knob.bpDelay = (maxRowIdx - knob.row) * 0.045;
         knob.bpGlow = 1.0;
 
         memEntry.knobWeights.set(knob.id, roundedW);
@@ -966,7 +989,7 @@
       }
     });
 
-    // 2. Dejar todos los knobs exactamente en su estado post-Backprop para el siguiente lanzamiento
+    // 2. Leave all knobs in their post-Backprop state for the next launch
     syncContextualKnobsForPrompt(promptKey);
 
     spawnBackpropPulses(targetBin);
@@ -975,7 +998,7 @@
     bpEpochCountEl.textContent = String(state.bpEpochs);
 
     const avgDelta = adjustedCount > 0 ? (sumAbsDelta / adjustedCount).toFixed(2) : "0.00";
-    bpFeedbackLog.innerHTML = `<strong>Época #${state.bpEpochs}:</strong> ${adjustedCount} knobs (Δ ±${avgDelta}) para <strong>“${escapeHtml(promptKey)}” → “${escapeHtml(targetBin.word)}”</strong>.${renderTrainedMemoryStripHtml()}`;
+    bpFeedbackLog.innerHTML = `<strong>Epoch #${state.bpEpochs}:</strong> ${adjustedCount} knobs (Δ ±${avgDelta}) for <strong>“${escapeHtml(promptKey)}” → “${escapeHtml(targetBin.word)}”</strong>.${renderTrainedMemoryStripHtml()}`;
 
     if (launchAfter) {
       clearBallsAndBins(true);
@@ -1005,7 +1028,7 @@
     const tokens = parsePromptTokens(promptInput.value);
     const promptKey = getNormalizedPromptKey(promptInput.value);
     if (tokenCountBadge) {
-      tokenCountBadge.textContent = `${tokens.length} ${tokens.length === 1 ? "palabra" : "palabras"} · ${tokens.length * state.ballsPerWord} bolas`;
+      tokenCountBadge.textContent = `${tokens.length} ${tokens.length === 1 ? "word" : "words"} · ${tokens.length * state.ballsPerWord} balls`;
     }
     tokenChipsContainer.innerHTML = "";
 
@@ -1014,7 +1037,7 @@
       chip.type = "button";
       chip.className = "token-chip";
       const decimalsStr = tok.vector.map((c) => c.decimal.toFixed(2)).join(", ");
-      chip.title = `Vector contextual de "${tok.word}": [${decimalsStr}] — Haz clic para lanzar solo esta palabra por los carriles`;
+      chip.title = `Contextual vector for "${tok.word}": [${decimalsStr}] — Click to launch only this word along the rails`;
 
       const textSpan = document.createElement("span");
       textSpan.textContent = tok.word;
@@ -1179,7 +1202,7 @@
 
     if (totalLanded === 0) {
       if (winnerWordEl) winnerWordEl.textContent = "—";
-      if (winnerStatsEl) winnerStatsEl.textContent = "Lanza bolas para ver distribución";
+      if (winnerStatsEl) winnerStatsEl.textContent = "Launch balls to see distribution";
       completedSentenceEl.innerHTML = `<span class="prompt-part">${escapeHtml(promptText || "…")}</span> <span class="predicted-part">…</span>`;
       btnAppendWinner.disabled = true;
       top3CandidatesEl.innerHTML = [0, 1, 2]
@@ -1208,7 +1231,7 @@
 
     if (winnerWordEl) winnerWordEl.textContent = `“${winner.word}”`;
     if (winnerStatsEl) {
-      winnerStatsEl.textContent = `${winner.count}/${totalLanded} bolas (${pct}% · Σ ${winner.weightedScore.toFixed(1)})`;
+      winnerStatsEl.textContent = `${winner.count}/${totalLanded} balls (${pct}% · Σ ${winner.weightedScore.toFixed(1)})`;
     }
 
     completedSentenceEl.innerHTML = `<span class="prompt-part">${escapeHtml(promptText)}</span> <span class="predicted-part">${escapeHtml(winner.word)}</span>`;
@@ -1234,7 +1257,7 @@
         const samplePct = Math.round((samplingProbs[idx] || 0) * 100);
         const isTarget = item.index === state.backpropTargetBinIndex;
         return `
-          <div class="top3-row" title="Bolas: ${item.count}/${totalLanded} (${itemPct}%) · Probabilidad de ser elegida con Temperatura ${state.temperature.toFixed(2)}: ${samplePct}%">
+          <div class="top3-row" title="Balls: ${item.count}/${totalLanded} (${itemPct}%) · Sampling probability at Temperature ${state.temperature.toFixed(2)}: ${samplePct}%">
             <strong>#${idx + 1} ${escapeHtml(item.word)} ${isTarget ? "🎯" : ""}</strong>
             <div class="top3-bar-wrap">
               <div class="top3-bar-fill" style="width: ${itemPct}%"></div>
@@ -1247,7 +1270,7 @@
   }
 
   /**
-   * Calcula las probabilidades de muestreo (Softmax con Temperatura) entre las 3 palabras ganadoras
+   * Computes sampling probabilities (Softmax with Temperature) across the Top-3 candidate words
    */
   function computeTop3SamplingProbs(top3) {
     if (!top3 || top3.length === 0) return [];
@@ -1302,17 +1325,17 @@
 
     if (activeCount > 0) {
       simStatusDot.classList.add("busy");
-      simStatusText.textContent = `Rodando por los carriles y cayendo según calibre (${activeCount} bolas en curso)…`;
+      simStatusText.textContent = `Rolling along rails and dropping by caliber (${activeCount} balls active)…`;
     } else {
       simStatusDot.classList.remove("busy");
-      simStatusText.textContent = "Listo — Haz clic en una palabra inferior para fijarla como objetivo 🎯 o gira cualquier knob";
+      simStatusText.textContent = "Ready — Click a bottom word to set it as target 🎯 or drag any knob";
     }
   }
 
   /**
-   * Paso de simulación quasi-física:
-   * Fase 1: La bola rueda por la vía superior de dos carriles divergentes hasta que la abertura supera su diámetro.
-   * Fase 2: La bola se cuela entre los dos carriles y cae a través de las 8 filas de knobs hacia las 24 cubetas.
+   * Quasi-physical simulation step:
+   * Phase 1: Ball rolls along the top diverging rails until the gap exceeds its diameter.
+   * Phase 2: Ball drops through the rows of knobs toward the bottom vocabulary bins.
    */
   function stepPhysics(dt) {
     if (state.spawnQueue.length > 0) {
@@ -1382,7 +1405,6 @@
           } else {
             if (activeEntry) activeEntry.converged = false;
             state.autoTrainPassSuccessCount = 0;
-            // Reajustar los knobs para la frase actual antes de pasar al siguiente elemento del memory-strip
             for (const entry of state.trainedPrompts.values()) {
               if (entry !== activeEntry) entry.converged = false;
             }
@@ -1393,8 +1415,8 @@
           if (keys.length > 0 && state.autoTrainPassSuccessCount >= keys.length) {
             stopAutoTrain(
               keys.length === 1
-                ? `✅ ¡Convergencia alcanzada en ${state.bpEpochs} épocas! “${VOCABULARY[state.backpropTargetBinIndex].word}” gana con el ${Math.round((targetCount / total) * 100)}%.`
-                : `✅ ¡Convergencia completada en las ${keys.length} reglas de la memoria tras ${state.bpEpochs} épocas!`
+                ? `✅ Convergence reached in ${state.bpEpochs} epochs! “${VOCABULARY[state.backpropTargetBinIndex].word}” wins with ${Math.round((targetCount / total) * 100)}%.`
+                : `✅ Convergence completed across all ${keys.length} rules in memory after ${state.bpEpochs} epochs!`
             );
             return;
           }
@@ -2096,12 +2118,12 @@
   function updateHoveredKnobUI(knob) {
     if (!hoveredKnobPill) return;
     if (!knob) {
-      hoveredKnobPill.innerHTML = `Knob: <strong>ninguno</strong>`;
+      hoveredKnobPill.innerHTML = `Knob: <strong>none</strong>`;
       return;
     }
     const sign = knob.weight > 0 ? "+" : "";
-    const dir = knob.weight > 0.05 ? "→ Der" : knob.weight < -0.05 ? "← Izq" : "Centro";
-    hoveredKnobPill.innerHTML = `Knob F${knob.row + 1}·N${knob.col + 1}: <strong>${sign}${knob.weight.toFixed(2)} (${dir})</strong>`;
+    const dir = knob.weight > 0.05 ? "→ Right" : knob.weight < -0.05 ? "← Left" : "Center";
+    hoveredKnobPill.innerHTML = `Knob R${knob.row + 1}·N${knob.col + 1}: <strong>${sign}${knob.weight.toFixed(2)} (${dir})</strong>`;
   }
 
   canvas.addEventListener("pointerdown", (evt) => {
@@ -2145,7 +2167,7 @@
         state.trainedPrompts.get(activeKey).knobWeights.set(k.id, roundedW);
       }
       updateHoveredKnobUI(k);
-      bpFeedbackLog.innerHTML = `Ajuste manual en <strong>Knob F${k.row + 1}·N${k.col + 1}</strong> → peso <strong>${k.weight > 0 ? "+" : ""}${k.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
+      bpFeedbackLog.innerHTML = `Manual adjustment on <strong>Knob R${k.row + 1}·N${k.col + 1}</strong> → weight <strong>${k.weight > 0 ? "+" : ""}${k.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
       return;
     }
 
@@ -2181,7 +2203,7 @@
         state.trainedPrompts.get(activeKey).knobWeights.set(knob.id, roundedW);
       }
       updateHoveredKnobUI(knob);
-      bpFeedbackLog.innerHTML = `Ajuste manual con rueda en <strong>Knob F${knob.row + 1}·N${knob.col + 1}</strong> → peso <strong>${knob.weight > 0 ? "+" : ""}${knob.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
+      bpFeedbackLog.innerHTML = `Wheel adjustment on <strong>Knob R${knob.row + 1}·N${knob.col + 1}</strong> → weight <strong>${knob.weight > 0 ? "+" : ""}${knob.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
     },
     { passive: false }
   );
@@ -2205,7 +2227,7 @@
     });
   }
 
-  // Diálogo de selección de ejemplos de Prompt
+  // Prompt Examples Selection Dialog
   const btnOpenExamples = document.getElementById("btn-open-examples");
   const examplesDialog = document.getElementById("examples-dialog");
   const examplesList = document.getElementById("examples-list");
@@ -2265,7 +2287,7 @@
   function triggerBurstDrop() {
     const tokens = parsePromptTokens(promptInput.value);
     if (!tokens.length) return;
-    // Cada vez que se hace un lanzamiento se vacía automáticamente el tablero y los knobs vuelven a su estado base
+    // Clear board automatically on every launch and reset knobs to post-Backprop base weights
     clearBallsAndBins(true);
     const promptKey = getNormalizedPromptKey(promptInput.value);
     if (state.trainedPrompts.has(promptKey)) {
@@ -2313,7 +2335,7 @@
 
     const chosenWord = sampled.chosen.word;
     const probPct = Math.round(sampled.prob * 100);
-    bpFeedbackLog.innerHTML = `🎲 Muestreo Top-3 (Temp ${state.temperature.toFixed(2)}): elegida <strong>#${sampled.rank} “${escapeHtml(chosenWord)}”</strong> (${probPct}% prob).`;
+    bpFeedbackLog.innerHTML = `🎲 Top-3 Sampling (Temp ${state.temperature.toFixed(2)}): picked <strong>#${sampled.rank} “${escapeHtml(chosenWord)}”</strong> (${probPct}% prob).`;
 
     promptInput.value = `${promptInput.value.trim()} ${chosenWord}`.trim();
     clearBallsAndBins(true);
@@ -2351,15 +2373,61 @@
   }
   bpFeedbackLog.addEventListener("click", handleMemoryChipClick);
 
-  // Diálogo de Configuración (engranaje superior derecho)
+  // Machine Configuration Dialog (top-right gear button)
+  const canvasWrapper = document.getElementById("canvas-wrapper");
   const btnOpenConfig = document.getElementById("btn-open-config");
   const configDialog = document.getElementById("config-dialog");
   const btnCloseConfig = document.getElementById("btn-close-config");
   const btnCloseConfigX = document.getElementById("btn-close-config-x");
   const configStateFeedback = document.getElementById("config-state-feedback");
+  const configCanvasWidthInput = document.getElementById("config-canvas-width");
+  const configCanvasHeightInput = document.getElementById("config-canvas-height");
+  const btnCanvasAutofit = document.getElementById("btn-canvas-autofit");
+  const configRowsInput = document.getElementById("config-rows-input");
+  const configRowsSummary = document.getElementById("config-rows-summary");
+  const btnAutoRows = document.getElementById("btn-auto-rows");
+  const btnApplyGeometry = document.getElementById("btn-apply-geometry");
+
+  function updateConfigRowsSummaryUI(counts) {
+    if (!configRowsSummary) return;
+    const list = Array.isArray(counts) && counts.length > 0 ? counts : state.rowCounts;
+    const totalKnobs = list.reduce((a, b) => a + b, 0);
+    configRowsSummary.textContent = `${list.length} ${list.length === 1 ? "row" : "rows"} · ${totalKnobs} knobs`;
+  }
+
+  function syncConfigDialogFields() {
+    if (configCanvasWidthInput) configCanvasWidthInput.value = String(state.width);
+    if (configCanvasHeightInput) configCanvasHeightInput.value = String(state.height);
+    if (configRowsInput) configRowsInput.value = state.rowCounts.join(", ");
+    updateConfigRowsSummaryUI(state.rowCounts);
+  }
+
+  function applyCanvasDimensions(w, h, isCustom) {
+    const dpr = window.devicePixelRatio || 1;
+    state.dpr = dpr;
+    state.width = Math.round(w);
+    state.height = Math.round(h);
+
+    if (isCustom) {
+      state.customCanvasSize = { width: state.width, height: state.height };
+      if (canvasWrapper) canvasWrapper.classList.add("custom-canvas-size");
+      canvas.style.width = `${state.width}px`;
+      canvas.style.height = `${state.height}px`;
+    } else {
+      state.customCanvasSize = null;
+      if (canvasWrapper) canvasWrapper.classList.remove("custom-canvas-size");
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+    }
+
+    canvas.width = Math.round(state.width * dpr);
+    canvas.height = Math.round(state.height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
 
   if (btnOpenConfig && configDialog) {
     btnOpenConfig.addEventListener("click", () => {
+      syncConfigDialogFields();
       configDialog.showModal();
     });
     if (btnCloseConfig) {
@@ -2382,6 +2450,91 @@
     }
   }
 
+  // Automatically pre-configure recommended rows & knobs when canvas dimensions change in the dialog
+  function handleCanvasDimensionInputChange() {
+    if (!configCanvasWidthInput || !configCanvasHeightInput || !configRowsInput) return;
+    const w = Math.max(480, Math.min(1920, Number(configCanvasWidthInput.value) || state.width));
+    const h = Math.max(420, Math.min(1400, Number(configCanvasHeightInput.value) || state.height));
+    const recommended = computeRecommendedRowCounts(w, h);
+    configRowsInput.value = recommended.join(", ");
+    updateConfigRowsSummaryUI(recommended);
+  }
+
+  if (configCanvasWidthInput) {
+    configCanvasWidthInput.addEventListener("input", handleCanvasDimensionInputChange);
+  }
+  if (configCanvasHeightInput) {
+    configCanvasHeightInput.addEventListener("input", handleCanvasDimensionInputChange);
+  }
+
+  if (configRowsInput) {
+    configRowsInput.addEventListener("input", () => {
+      const parsed = parseRowCountsString(configRowsInput.value);
+      if (parsed) {
+        updateConfigRowsSummaryUI(parsed);
+      }
+    });
+  }
+
+  if (btnAutoRows) {
+    btnAutoRows.addEventListener("click", () => {
+      const w = Math.max(480, Math.min(1920, Number(configCanvasWidthInput?.value) || state.width));
+      const h = Math.max(420, Math.min(1400, Number(configCanvasHeightInput?.value) || state.height));
+      const recommended = computeRecommendedRowCounts(w, h);
+      if (configRowsInput) configRowsInput.value = recommended.join(", ");
+      updateConfigRowsSummaryUI(recommended);
+    });
+  }
+
+  if (btnCanvasAutofit) {
+    btnCanvasAutofit.addEventListener("click", () => {
+      stopAutoTrain();
+      state.customCanvasSize = null;
+      state.customRowCounts = false;
+      if (canvasWrapper) canvasWrapper.classList.remove("custom-canvas-size");
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+
+      const rect = canvasWrapper ? canvasWrapper.getBoundingClientRect() : { width: 960, height: 700 };
+      const w = Math.max(480, Math.round(rect.width));
+      const h = Math.max(420, Math.round(rect.height));
+      applyCanvasDimensions(w, h, false);
+      state.rowCounts = computeRecommendedRowCounts(w, h);
+      layoutBoard(false);
+      clearBallsAndBins(true);
+      syncConfigDialogFields();
+
+      const totalKnobs = state.knobs.length;
+      const msg = `↔ Canvas fitted to window (${w}×${h}px) with auto layout: ${state.rowCounts.length} rows (${totalKnobs} knobs).`;
+      bpFeedbackLog.innerHTML = msg;
+      if (configStateFeedback) configStateFeedback.innerHTML = msg;
+    });
+  }
+
+  if (btnApplyGeometry) {
+    btnApplyGeometry.addEventListener("click", () => {
+      stopAutoTrain();
+      const w = Math.max(480, Math.min(1920, Number(configCanvasWidthInput?.value) || state.width));
+      const h = Math.max(420, Math.min(1400, Number(configCanvasHeightInput?.value) || state.height));
+      const parsedRows =
+        parseRowCountsString(configRowsInput?.value) || computeRecommendedRowCounts(w, h);
+
+      const sizeChanged = w !== state.width || h !== state.height;
+      applyCanvasDimensions(w, h, sizeChanged || Boolean(state.customCanvasSize));
+      state.rowCounts = parsedRows;
+      state.customRowCounts = true;
+      state.trainedPrompts.clear();
+      layoutBoard(false);
+      clearBallsAndBins(true);
+      updateMemoryBadgeUI();
+      syncConfigDialogFields();
+
+      const msg = `✓ Applied canvas ${w}×${h}px and ${state.rowCounts.length} rows [${state.rowCounts.join(", ")}] (${state.knobs.length} knobs).`;
+      bpFeedbackLog.innerHTML = msg;
+      if (configStateFeedback) configStateFeedback.innerHTML = msg;
+    });
+  }
+
   Object.entries(presetBtns).forEach(([modeKey, btn]) => {
     if (!btn) return;
     btn.addEventListener("click", () => {
@@ -2390,10 +2543,10 @@
       clearBallsAndBins(true);
       const msg =
         modeKey === "random"
-          ? "🎲 Knobs puestos en disposición aleatoria. Pulsa “▶ Lanzar Frase” o entrena con “⚡ Backprop”."
+          ? "🎲 Knobs set to random weights. Click “▶ Launch Prompt” or train with “⚡ Backprop”."
           : modeKey === "neutral"
-            ? "⚖️ Knobs puestos en posición neutra (0°). Pulsa “▶ Lanzar Frase” o entrena con “⚡ Backprop”."
-            : "🎯 Knobs pre-entrenados listos. Pulsa “▶ Lanzar Frase”.";
+            ? "⚖️ Knobs set to neutral (0°). Click “▶ Launch Prompt” or train with “⚡ Backprop”."
+            : "🎯 Pre-trained knobs ready. Click “▶ Launch Prompt”.";
       bpFeedbackLog.innerHTML = msg;
       if (configStateFeedback) {
         configStateFeedback.innerHTML = msg;
@@ -2401,7 +2554,7 @@
     });
   });
 
-  // Guardar y Cargar Estado completo de la máquina
+  // Save and Load Full Machine State
   const btnSaveState = document.getElementById("btn-save-state");
   const btnLoadState = document.getElementById("btn-load-state");
   const SAVED_STATE_KEY = "galton_llm_saved_state_v1";
@@ -2423,6 +2576,11 @@
         mode: state.mode,
         bpEpochs: state.bpEpochs,
         backpropTargetBinIndex: state.backpropTargetBinIndex,
+        width: state.width,
+        height: state.height,
+        customCanvasSize: state.customCanvasSize,
+        rowCounts: [...state.rowCounts],
+        customRowCounts: state.customRowCounts,
         ballsPerWord: state.ballsPerWord,
         learningRate: state.learningRate,
         knobStrength: state.knobStrength,
@@ -2436,9 +2594,9 @@
       try {
         localStorage.setItem(SAVED_STATE_KEY, JSON.stringify(payload));
       } catch (_) {
-        // Ignorar si localStorage no está disponible
+        // Ignore if localStorage is unavailable
       }
-      const summaryMsg = `💾 Estado guardado: ${state.knobs.length} knobs, ${VOCABULARY.length} palabras de vocabulario, ${state.ballsPerWord} bolas/pal., η=${state.learningRate.toFixed(2)}, Fuerza=${state.knobStrength.toFixed(1)}×, Resist.=${Math.round(state.knobResistance * 100)}%, T=${state.temperature.toFixed(2)} y ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "regla" : "reglas"}.`;
+      const summaryMsg = `💾 State saved: ${state.knobs.length} knobs (${state.rowCounts.length} rows), ${VOCABULARY.length} vocab words, ${state.ballsPerWord} balls/word, η=${state.learningRate.toFixed(2)}, Strength=${state.knobStrength.toFixed(1)}×, Resist.=${Math.round(state.knobResistance * 100)}%, T=${state.temperature.toFixed(2)}, and ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "rule" : "rules"}.`;
       bpFeedbackLog.innerHTML = summaryMsg;
       if (configStateFeedback) {
         configStateFeedback.innerHTML = summaryMsg;
@@ -2459,7 +2617,7 @@
         }
       }
       if (!payload || !Array.isArray(payload.knobBaseWeights)) {
-        const warnMsg = `⚠️ No hay ningún estado guardado todavía. Pulsa primero <strong>💾 Guardar Estado</strong>.`;
+        const warnMsg = `⚠️ No saved state found yet. Click <strong>💾 Save State</strong> first.`;
         bpFeedbackLog.innerHTML = warnMsg;
         if (configStateFeedback) {
           configStateFeedback.innerHTML = warnMsg;
@@ -2467,7 +2625,16 @@
         return;
       }
 
-      // 1. Restaurar Vocabulario
+      // 1. Restore Canvas Dimensions & Row Counts
+      if (payload.customCanvasSize && payload.width && payload.height) {
+        applyCanvasDimensions(payload.width, payload.height, true);
+      }
+      if (Array.isArray(payload.rowCounts) && payload.rowCounts.length > 0) {
+        state.rowCounts = payload.rowCounts.map((n) => Math.max(2, Math.min(45, Number(n) || 10)));
+        state.customRowCounts = Boolean(payload.customRowCounts);
+      }
+
+      // 2. Restore Vocabulary
       if (Array.isArray(payload.vocabWords) && payload.vocabWords.length >= 4) {
         VOCABULARY = payload.vocabWords.map((w) => ({
           word: w,
@@ -2489,10 +2656,11 @@
           vocabCountBadge.textContent = String(VOCABULARY.length);
         }
         initTargetWordSelect();
-        layoutBoard(true);
       }
 
-      // 2. Restaurar hiperparámetros (bolas/palabra, tasa, fuerza, resistencia, temperatura)
+      layoutBoard(false);
+
+      // 3. Restore Hyperparameters (balls/word, learning rate, strength, resistance, temperature)
       if (typeof payload.ballsPerWord === "number") {
         state.ballsPerWord = payload.ballsPerWord;
         if (ballsPerWordSlider) ballsPerWordSlider.value = String(state.ballsPerWord);
@@ -2519,7 +2687,7 @@
         if (temperatureVal) temperatureVal.textContent = state.temperature.toFixed(2);
       }
 
-      // 3. Restaurar modo y pesos de los Knobs
+      // 4. Restore Mode & Knob Weights
       state.mode = payload.mode || "custom";
       Object.entries(presetBtns).forEach(([key, btn]) => {
         if (btn) btn.classList.toggle("active", key === state.mode);
@@ -2533,7 +2701,7 @@
         }
       });
 
-      // 4. Restaurar reglas entrenadas
+      // 5. Restore Trained Rules
       const restoredPrompts = new Map();
       if (Array.isArray(payload.rules)) {
         for (const r of payload.rules) {
@@ -2561,8 +2729,9 @@
       renderTokenChips();
       updateMemoryBadgeUI();
       updatePredictionUI();
+      syncConfigDialogFields();
 
-      const loadMsg = `📂 Estado restaurado: ${state.knobs.length} knobs, ${VOCABULARY.length} palabras de vocabulario, ${state.ballsPerWord} bolas/pal., η=${state.learningRate.toFixed(2)}, Fuerza=${state.knobStrength.toFixed(1)}×, Resist.=${Math.round(state.knobResistance * 100)}%, T=${state.temperature.toFixed(2)} y ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "regla" : "reglas"}.`;
+      const loadMsg = `📂 State restored: ${state.knobs.length} knobs (${state.rowCounts.length} rows), ${VOCABULARY.length} vocab words, ${state.ballsPerWord} balls/word, η=${state.learningRate.toFixed(2)}, Strength=${state.knobStrength.toFixed(1)}×, Resist.=${Math.round(state.knobResistance * 100)}%, T=${state.temperature.toFixed(2)}, and ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "rule" : "rules"}.`;
       bpFeedbackLog.innerHTML = loadMsg;
       if (configStateFeedback) {
         configStateFeedback.innerHTML = loadMsg;
@@ -2642,11 +2811,10 @@
 
   btnAutoTrain.addEventListener("click", () => {
     if (state.autoTraining) {
-      stopAutoTrain("⏹ Auto-entrenamiento pausado por el usuario.");
+      stopAutoTrain("⏹ Auto-training paused by user.");
       return;
     }
 
-    // Asegurar que la frase actual esté registrada en la tira de memoria si aún no había ninguna o si se editó
     const currentKey = getNormalizedPromptKey(promptInput.value) || "default";
     if (!state.trainedPrompts.has(currentKey)) {
       performBackpropStep(false);
@@ -2673,15 +2841,15 @@
 
     state.autoTraining = true;
     btnAutoTrain.classList.add("active-loop");
-    btnAutoTrain.textContent = "⏹ Detener";
+    btnAutoTrain.textContent = "⏹ Stop";
     clearBallsAndBins(true);
     triggerBurstDrop();
   });
 
-  // Gestión del diálogo para definir el Vocabulario de Salida
+  // Output Vocabulary Dialog Management
   const VERB_HINTS = new Set([
-    "duerme", "corre", "brilla", "aprende", "predice", "ilumina",
-    "canta", "salta", "vuela", "piensa", "habla", "escribe", "lee", "juega"
+    "is", "has", "sat", "ran", "sees", "eats", "goes", "gets",
+    "runs", "sleeps", "jumps", "flies", "plays", "reads"
   ]);
 
   function inferWordRole(w) {
@@ -2711,7 +2879,7 @@
   function updateVocabDialogPreview() {
     if (!vocabTextarea || !vocabDialogCount || !vocabDialogChips) return;
     const words = parseVocabInput(vocabTextarea.value);
-    vocabDialogCount.textContent = `${words.length} ${words.length === 1 ? "palabra detectada" : "palabras detectadas"} (mín. 4 · máx. 40)`;
+    vocabDialogCount.textContent = `${words.length} ${words.length === 1 ? "word detected" : "words detected"} (min 4 · max 40)`;
     vocabDialogChips.innerHTML = words
       .map((w, idx) => `<span class="vocab-chip-item">#${idx + 1} ${escapeHtml(w)}</span>`)
       .join("");
@@ -2749,12 +2917,11 @@
 
     initTargetWordSelect();
     layoutBoard(false);
-    clearBallsAndBins();
+    clearBallsAndBins(true);
     renderTokenChips();
     if (state.targetBinsInfo.length > 0) {
       setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
     }
-    triggerBurstDrop();
     return true;
   }
 
@@ -2791,14 +2958,13 @@
         const words = parseVocabInput(vocabTextarea.value);
         if (words.length < 4) {
           evt.preventDefault();
-          vocabDialogCount.textContent = "⚠️ Introduce al menos 4 palabras distintas";
+          vocabDialogCount.textContent = "⚠️ Please enter at least 4 distinct words";
           return;
         }
         applyVocabularyWords(words);
       });
     }
 
-    // Fallback para navegadores sin soporte nativo de <dialog closedby="any">
     if (!("closedBy" in HTMLDialogElement.prototype)) {
       vocabDialog.addEventListener("click", (event) => {
         if (event.target !== vocabDialog) return;
@@ -2814,15 +2980,15 @@
     }
   }
 
-  // Gestión del diálogo de Reglas de Entrenamiento (frase: palabra_objetivo)
+  // Training Rules Dialog Management (prompt: target_word)
   const ALL_EXAMPLE_RULES = [
-    { prompt: "el gato duerme en", target: "la" },
-    { prompt: "el gato duerme en la", target: "alfombra" },
-    { prompt: "el sol brilla en el", target: "cielo" },
-    { prompt: "la red aprende con", target: "datos" },
-    { prompt: "el perro corre por el", target: "bosque" },
-    { prompt: "un modelo predice la", target: "palabra" },
-    { prompt: "la luna ilumina la", target: "noche" }
+    { prompt: "the cat sat on", target: "the" },
+    { prompt: "the cat sat on the", target: "mat" },
+    { prompt: "the dog ran to the", target: "man" },
+    { prompt: "the sun is", target: "hot" },
+    { prompt: "the boy has a red", target: "hat" },
+    { prompt: "the girl has a blue", target: "bag" },
+    { prompt: "a big fish is in the", target: "bag" }
   ];
 
   function parseRulesInput(rawText) {
@@ -2864,7 +3030,7 @@
   function updateRulesDialogPreview() {
     if (!rulesTextarea || !rulesDialogCount || !rulesDialogChips) return;
     const rules = parseRulesInput(rulesTextarea.value);
-    rulesDialogCount.textContent = `${rules.length} ${rules.length === 1 ? "regla detectada" : "reglas detectadas"}`;
+    rulesDialogCount.textContent = `${rules.length} ${rules.length === 1 ? "rule detected" : "rules detected"}`;
     rulesDialogChips.innerHTML = rules
       .map((r) => {
         const inVocab = VOCABULARY.some((v) => v.word === r.targetWord);
@@ -2929,7 +3095,6 @@
         stopAutoTrain();
         const rules = parseRulesInput(rulesTextarea.value);
 
-        // Si alguna palabra objetivo no existe en el vocabulario actual, añadirla automáticamente
         let vocabModified = false;
         for (const r of rules) {
           const exists = VOCABULARY.some((v) => v.word === r.targetWord);
@@ -2997,9 +3162,9 @@
           renderTokenChips();
           syncContextualKnobsForPrompt(activeKey);
           renderTrainedMemoryStripHtml();
-          bpFeedbackLog.innerHTML = `✅ ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "regla cargada" : "reglas cargadas"} en memoria. Pulsa <strong>🔁 Auto-Entrenar</strong> para entrenarlas una por una.`;
+          bpFeedbackLog.innerHTML = `✅ ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "rule loaded" : "rules loaded"} into memory. Click <strong>🔁 Auto-Train</strong> to train them one by one.`;
         } else {
-          bpFeedbackLog.innerHTML = "Memoria de reglas vaciada. Elige palabra objetivo y pulsa “1 Paso de Backprop”.";
+          bpFeedbackLog.innerHTML = "Rule memory cleared. Choose a target word and click “⚡ Backprop”.";
         }
       });
     }
@@ -3019,8 +3184,8 @@
     }
   }
 
-  const canvasWrapper = document.getElementById("canvas-wrapper");
   const resizeObserver = new ResizeObserver((entries) => {
+    if (state.customCanvasSize) return;
     for (const entry of entries) {
       const rect = entry.contentRect;
       if (rect.width < 100 || rect.height < 100) continue;
@@ -3034,10 +3199,20 @@
       canvas.height = Math.round(rect.height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      layoutBoard(state.knobs.length > 0);
+      if (!state.customRowCounts) {
+        const nextRowCounts = computeRecommendedRowCounts(state.width, state.height);
+        const changed = nextRowCounts.join(",") !== state.rowCounts.join(",");
+        state.rowCounts = nextRowCounts;
+        layoutBoard(state.knobs.length > 0 && !changed);
+      } else {
+        layoutBoard(state.knobs.length > 0);
+      }
+      syncConfigDialogFields();
     }
   });
-  resizeObserver.observe(canvasWrapper);
+  if (canvasWrapper) {
+    resizeObserver.observe(canvasWrapper);
+  }
 
   let lastTime = performance.now();
   function animate(now) {
@@ -3058,6 +3233,7 @@
   initTargetWordSelect();
   renderTokenChips();
   layoutBoard(false);
+  syncConfigDialogFields();
   requestAnimationFrame((t) => {
     lastTime = t;
     requestAnimationFrame(animate);
