@@ -331,12 +331,12 @@
   }
 
   /**
-   * Genera la combinación determinista de bolas (vector de números decimales) para una palabra,
-   * modulada por la Atención Contextual (contextSig) del prompt completo.
+   * Generates the deterministic combination of balls (decimal vector) for a word,
+   * modulated by the prompt's Contextual Attention (contextSig) across the full [0.06, 0.98] range
+   * so all 6 ball tiers (Red=0 through Violet=5) appear uniformly.
    */
   function getWordDecimalVector(rawWord, dimensionCount, contextSig, wordIdx = 0, totalWords = 1) {
     const clean = rawWord.toLowerCase().replace(/[.,;:!?¿¡"']/g, "").trim() || "x";
-    const isConn = CONNECTORS.has(clean);
 
     let wordHash = 2166136261;
     for (let i = 0; i < clean.length; i++) {
@@ -345,28 +345,24 @@
     }
 
     const ctxHash = contextSig ? contextSig.hash : 0;
-    const attnCenter = contextSig ? contextSig.attentionCenter : 0.5;
-    const isLastToken = wordIdx === totalWords - 1;
+    const ctxPhase = ((Math.abs(wordHash ^ Math.imul(ctxHash, 2654435761) ^ Math.imul(wordIdx + 1, 374761393))) % 1000) / 1000;
 
     const components = [];
     for (let d = 0; d < dimensionCount; d++) {
-      let h = Math.imul(wordHash ^ (ctxHash * 31) ^ ((d + 1) * 0x9e3779b9), 0x85ebca6b);
+      let h = Math.imul(
+        wordHash ^ Math.imul(ctxHash, 31) ^ Math.imul(wordIdx + 1, 0x85ebca6b) ^ Math.imul(d + 1, 0x9e3779b9),
+        0xc2b2ae35
+      );
       h ^= h >>> 13;
       const pseudoRand = (Math.abs(h) % 1000) / 1000;
 
-      // Garantizar variedad de tamaños modulada por el centro de atención contextual del prompt
-      const baseBand = ((d * 2 + Math.abs(wordHash + ctxHash)) % 6) / 5;
-      let lexicalVal = baseBand * 0.65 + pseudoRand * 0.35;
-      if (isConn && !isLastToken) {
-        lexicalVal = lexicalVal * 0.82 + 0.07;
-      } else {
-        lexicalVal = lexicalVal * 0.88 + 0.1;
-      }
+      // Stride 5 is coprime with 6, visiting all 6 size bands (0..5) evenly
+      const bandSlot = (d * 5 + Math.abs(wordHash)) % 6;
+      // Modular wraparound on [0, 1) preserves uniform coverage across all 6 tiers (including Red & Violet)
+      const u = (((bandSlot + 0.5 + (pseudoRand - 0.5) * 1.35) / 6) + ctxPhase + 10) % 1.0;
+      const rawDecimal = 0.06 + u * 0.92;
 
-      // Mezcla de Self-Attention: el contexto global de la frase desplaza el vector decimal
-      const rawDecimal = lexicalVal * 0.62 + attnCenter * 0.38;
-
-      const decimal = Math.max(0.08, Math.min(0.98, Math.round(rawDecimal * 100) / 100));
+      const decimal = Math.max(0.06, Math.min(0.98, Math.round(rawDecimal * 100) / 100));
       const spec = decimalToTierSpec(decimal);
 
       components.push({
