@@ -130,80 +130,6 @@
     "my", "your"
   ]);
 
-  // Semantic associations of a "pre-trained LLM"
-  const SEMANTIC_RULES = [
-    {
-      match: ["cat", "sat"],
-      targets: [
-        { word: "mat", weight: 1.0 },
-        { word: "bag", weight: 0.65 },
-        { word: "bed", weight: 0.35 }
-      ]
-    },
-    {
-      match: ["cat"],
-      targets: [
-        { word: "sat", weight: 0.85 },
-        { word: "mat", weight: 0.7 },
-        { word: "bed", weight: 0.4 }
-      ]
-    },
-    {
-      match: ["dog", "ran"],
-      targets: [
-        { word: "man", weight: 1.0 },
-        { word: "boy", weight: 0.75 },
-        { word: "girl", weight: 0.35 }
-      ]
-    },
-    {
-      match: ["dog"],
-      targets: [
-        { word: "ran", weight: 0.9 },
-        { word: "man", weight: 0.7 }
-      ]
-    },
-    {
-      match: ["sun", "is"],
-      targets: [
-        { word: "hot", weight: 1.0 },
-        { word: "big", weight: 0.65 },
-        { word: "red", weight: 0.3 }
-      ]
-    },
-    {
-      match: ["sun"],
-      targets: [
-        { word: "is", weight: 0.9 },
-        { word: "hot", weight: 0.75 }
-      ]
-    },
-    {
-      match: ["boy", "red"],
-      targets: [
-        { word: "hat", weight: 1.0 },
-        { word: "bag", weight: 0.65 },
-        { word: "mat", weight: 0.4 }
-      ]
-    },
-    {
-      match: ["girl", "blue"],
-      targets: [
-        { word: "bag", weight: 1.0 },
-        { word: "hat", weight: 0.65 },
-        { word: "bed", weight: 0.4 }
-      ]
-    },
-    {
-      match: ["fish", "in"],
-      targets: [
-        { word: "bag", weight: 1.0 },
-        { word: "sun", weight: 0.55 },
-        { word: "hat", weight: 0.4 }
-      ]
-    }
-  ];
-
   // DOM References
   const canvas = document.getElementById("galton-canvas");
   const ctx = canvas.getContext("2d");
@@ -218,7 +144,6 @@
   const btnAppendWinner = document.getElementById("btn-append-winner");
 
   const presetBtns = {
-    trained: document.getElementById("preset-trained"),
     random: document.getElementById("preset-random"),
     neutral: document.getElementById("preset-neutral")
   };
@@ -290,7 +215,7 @@
     customCanvasSize: null, // null = auto-fit window, or { width, height }
     rowCounts: [22, 23, 22, 23, 22, 23, 22, 23],
     customRowCounts: false,
-    mode: "trained", // 'trained' | 'random' | 'neutral' | 'custom'
+    mode: "neutral", // 'neutral' | 'random' | 'custom'
     ballsPerWord: 6,
     temperature: 0.25,
     knobStrength: 1.0,
@@ -303,7 +228,7 @@
     autoTrainPendingStep: false,
     autoTrainIndex: 0,
     autoTrainPassSuccessCount: 0,
-    trainedPrompts: new Map(), // Trained prompt memory: promptKey -> { promptKey, targetBinIndex, knobWeights: Map, epochs, converged }
+    trainedPrompts: new Map(), // Trained prompt memory: promptKey -> { promptKey, targetBinIndex, epochs, converged }
     knobs: [],
     balls: [],
     spawnQueue: [],
@@ -329,7 +254,6 @@
     dragStartX: 0,
     dragStartWeight: 0,
     hoveredBinIndex: -1,
-    targetBinsInfo: [],
     boardBounds: {
       left: 40,
       right: 920,
@@ -560,60 +484,6 @@
     });
   }
 
-  function computeTrainedTargetBins(tokens) {
-    const words = tokens.map((t) => t.word);
-    const wordSet = new Set(words);
-    const lastWord = words[words.length - 1] || "";
-
-    for (const rule of SEMANTIC_RULES) {
-      const allMatched = rule.match.every((m) => wordSet.has(m));
-      if (allMatched) {
-        const filtered = rule.targets.filter((t) => t.word !== lastWord);
-        const list = filtered.length > 0 ? filtered : rule.targets;
-        const found = list
-          .map((t) => ({
-            binIndex: VOCABULARY.findIndex((v) => v.word === t.word),
-            weight: t.weight,
-            word: t.word
-          }))
-          .filter((t) => t.binIndex >= 0);
-        if (found.length > 0) return found;
-      }
-    }
-
-    let candidates = [];
-    if (lastWord === "the" || lastWord === "a" || lastWord === "an") {
-      candidates = ["mat", "hat", "bag", "bed", "cat", "dog", "sun", "man"];
-    } else if (!CONNECTORS.has(lastWord)) {
-      candidates = ["sat", "ran", "is", "has"];
-    } else {
-      candidates = ["mat", "bag", "hat", "bed"];
-    }
-
-    const available = candidates
-      .map((w) => ({ word: w, binIndex: VOCABULARY.findIndex((v) => v.word === w) }))
-      .filter((item) => item.binIndex >= 0);
-
-    if (available.length > 0) {
-      const hash = words.join("").length % available.length;
-      const p = available[hash];
-      const s = available[(hash + 1) % available.length];
-      return [
-        { binIndex: p.binIndex, weight: 1.0, word: p.word },
-        { binIndex: s.binIndex, weight: 0.6, word: s.word }
-      ];
-    }
-
-    // Deterministic fallback for custom vocabularies
-    const n = Math.max(1, VOCABULARY.length);
-    const idx1 = words.join("").length % n;
-    const idx2 = (idx1 + Math.max(1, Math.floor(n / 3))) % n;
-    return [
-      { binIndex: idx1, weight: 1.0, word: VOCABULARY[idx1]?.word || "" },
-      { binIndex: idx2, weight: 0.6, word: VOCABULARY[idx2]?.word || "" }
-    ];
-  }
-
   /**
    * Computes the ideal weight w* in [-0.95, 0.95] so a knob at knob.x
    * steers balls toward targetX
@@ -776,39 +646,6 @@
     return "";
   }
 
-  /**
-   * Synchronizes base knob weights combining all trained rules in memory,
-   * prioritizing the active prompt's pathway at shared intersections.
-   */
-  function syncContextualKnobsForPrompt(promptKey) {
-    if (state.trainedPrompts.size === 0) {
-      resetKnobsToBaseWeights();
-      return;
-    }
-
-    for (const [otherKey, entry] of state.trainedPrompts.entries()) {
-      if (otherKey === promptKey) continue;
-      for (const [kId, wVal] of entry.knobWeights.entries()) {
-        if (state.knobs[kId]) {
-          state.knobs[kId].baseWeight = wVal;
-          state.knobs[kId].weight = wVal;
-        }
-      }
-    }
-
-    const activeEntry = state.trainedPrompts.get(promptKey);
-    if (activeEntry) {
-      for (const [kId, wVal] of activeEntry.knobWeights.entries()) {
-        if (state.knobs[kId]) {
-          state.knobs[kId].baseWeight = wVal;
-          state.knobs[kId].weight = wVal;
-        }
-      }
-    }
-
-    resetKnobsToBaseWeights();
-  }
-
   function applyKnobPreset(mode, clearMemory = false) {
     state.mode = mode;
 
@@ -819,18 +656,6 @@
     if (clearMemory && (mode === "neutral" || mode === "random")) {
       state.trainedPrompts.clear();
       updateMemoryBadgeUI();
-    }
-
-    const tokens = parsePromptTokens(promptInput.value);
-    state.targetBinsInfo = computeTrainedTargetBins(tokens);
-
-    if (mode === "neutral") {
-      state.knobs.forEach((knob) => {
-        knob.baseWeight = 0;
-        knob.weight = 0;
-        knob.lastDelta = 0;
-      });
-      return;
     }
 
     if (mode === "random") {
@@ -844,32 +669,16 @@
       return;
     }
 
-    if (mode === "trained") {
-      const promptKey = getNormalizedPromptKey(promptInput.value);
-      const primaryTarget = state.targetBinsInfo[0] || { binIndex: 6, weight: 1.0 };
-      const secondaryTarget = state.targetBinsInfo[1] || primaryTarget;
-
-      const primaryX = state.bins[primaryTarget.binIndex]?.xCenter ?? state.width * 0.5;
-      const secondaryX = state.bins[secondaryTarget.binIndex]?.xCenter ?? primaryX;
-      const halfRow = Math.floor((state.rowCounts?.length || 8) * 0.4);
-
-      state.knobs.forEach((knob) => {
-        const targetX = knob.col % 5 === 0 && knob.row >= halfRow ? secondaryX : primaryX;
-        const idealW = computeIdealKnobWeightForTargetX(knob, targetX);
-        const w = Math.round(idealW * 100) / 100;
-        knob.baseWeight = w;
-        knob.weight = w;
-        knob.lastDelta = 0;
-      });
-
-      if (state.trainedPrompts.size > 0) {
-        syncContextualKnobsForPrompt(promptKey);
-      }
-    }
+    // Default / "neutral": all knobs at 0°
+    state.knobs.forEach((knob) => {
+      knob.baseWeight = 0;
+      knob.weight = 0;
+      knob.lastDelta = 0;
+    });
   }
 
   /**
-   * Executes one step of Backpropagation with Multi-Prompt Contextual Memory.
+   * Executes one step of Backpropagation on the shared physical knobs.
    */
   function performBackpropStep(launchAfter = true) {
     const targetBin = state.bins[state.backpropTargetBinIndex];
@@ -882,15 +691,14 @@
     const targetX = targetBin.xCenter;
     const lr = state.learningRate;
 
-    // 1. Return all knobs to their post-Backprop base state
-    syncContextualKnobsForPrompt(promptKey);
+    // 1. Return all knobs to their post-Backprop base state before applying gradient update
+    resetKnobsToBaseWeights();
 
     let memEntry = state.trainedPrompts.get(promptKey);
     if (!memEntry) {
       memEntry = {
         promptKey,
         targetBinIndex: state.backpropTargetBinIndex,
-        knobWeights: new Map(),
         epochs: 0
       };
       state.trainedPrompts.set(promptKey, memEntry);
@@ -980,17 +788,13 @@
         knob.bpDelay = (maxRowIdx - knob.row) * 0.045;
         knob.bpGlow = 1.0;
 
-        memEntry.knobWeights.set(knob.id, roundedW);
-
         adjustedCount++;
         sumAbsDelta += Math.abs(actualDelta);
-      } else {
-        memEntry.knobWeights.set(knob.id, knob.baseWeight);
       }
     });
 
     // 2. Leave all knobs in their post-Backprop state for the next launch
-    syncContextualKnobsForPrompt(promptKey);
+    resetKnobsToBaseWeights();
 
     spawnBackpropPulses(targetBin);
 
@@ -1026,7 +830,6 @@
 
   function renderTokenChips() {
     const tokens = parsePromptTokens(promptInput.value);
-    const promptKey = getNormalizedPromptKey(promptInput.value);
     if (tokenCountBadge) {
       tokenCountBadge.textContent = `${tokens.length} ${tokens.length === 1 ? "word" : "words"} · ${tokens.length * state.ballsPerWord} balls`;
     }
@@ -1067,14 +870,6 @@
       tokenChipsContainer.appendChild(chip);
     });
 
-    const suggestedTargets = computeTrainedTargetBins(tokens);
-    state.targetBinsInfo = suggestedTargets;
-
-    if (state.trainedPrompts.has(promptKey)) {
-      syncContextualKnobsForPrompt(promptKey);
-    } else if (state.mode === "trained") {
-      applyKnobPreset("trained");
-    }
     updatePredictionUI();
   }
 
@@ -1431,7 +1226,6 @@
               setBackpropTargetBin(nextEntry.targetBinIndex, false);
             }
             renderTokenChips();
-            syncContextualKnobsForPrompt(nextKey);
             renderTrainedMemoryStripHtml();
           }
 
@@ -2162,10 +1956,6 @@
       k.hitEnergy = 0.6;
       state.mode = "custom";
       Object.values(presetBtns).forEach((btn) => btn && btn.classList.remove("active"));
-      const activeKey = getNormalizedPromptKey(promptInput.value);
-      if (state.trainedPrompts.has(activeKey)) {
-        state.trainedPrompts.get(activeKey).knobWeights.set(k.id, roundedW);
-      }
       updateHoveredKnobUI(k);
       bpFeedbackLog.innerHTML = `Manual adjustment on <strong>Knob R${k.row + 1}·N${k.col + 1}</strong> → weight <strong>${k.weight > 0 ? "+" : ""}${k.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
       return;
@@ -2198,10 +1988,6 @@
       knob.hitEnergy = 0.7;
       state.mode = "custom";
       Object.values(presetBtns).forEach((btn) => btn && btn.classList.remove("active"));
-      const activeKey = getNormalizedPromptKey(promptInput.value);
-      if (state.trainedPrompts.has(activeKey)) {
-        state.trainedPrompts.get(activeKey).knobWeights.set(knob.id, roundedW);
-      }
       updateHoveredKnobUI(knob);
       bpFeedbackLog.innerHTML = `Wheel adjustment on <strong>Knob R${knob.row + 1}·N${knob.col + 1}</strong> → weight <strong>${knob.weight > 0 ? "+" : ""}${knob.weight.toFixed(2)}</strong>.${renderTrainedMemoryStripHtml()}`;
     },
@@ -2216,8 +2002,6 @@
     const promptKey = getNormalizedPromptKey(promptInput.value);
     if (state.trainedPrompts.has(promptKey)) {
       setBackpropTargetBin(state.trainedPrompts.get(promptKey).targetBinIndex, false);
-    } else if (state.targetBinsInfo.length > 0) {
-      setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
     }
   }
 
@@ -2289,14 +2073,6 @@
     if (!tokens.length) return;
     // Clear board automatically on every launch and reset knobs to post-Backprop base weights
     clearBallsAndBins(true);
-    const promptKey = getNormalizedPromptKey(promptInput.value);
-    if (state.trainedPrompts.has(promptKey)) {
-      syncContextualKnobsForPrompt(promptKey);
-    } else if (state.mode === "trained") {
-      applyKnobPreset("trained");
-    } else if (state.trainedPrompts.size > 0) {
-      syncContextualKnobsForPrompt(promptKey);
-    }
     enqueueWordVectors(tokens);
   }
 
@@ -2309,14 +2085,6 @@
       const tokens = parsePromptTokens(promptInput.value, 3);
       if (!tokens.length) return;
       clearBallsAndBins(true);
-      const promptKey = getNormalizedPromptKey(promptInput.value);
-      if (state.trainedPrompts.has(promptKey)) {
-        syncContextualKnobsForPrompt(promptKey);
-      } else if (state.mode === "trained") {
-        applyKnobPreset("trained");
-      } else if (state.trainedPrompts.size > 0) {
-        syncContextualKnobsForPrompt(promptKey);
-      }
       enqueueWordVectors(tokens);
     });
   }
@@ -2343,8 +2111,6 @@
     const promptKey = getNormalizedPromptKey(promptInput.value);
     if (state.trainedPrompts.has(promptKey)) {
       setBackpropTargetBin(state.trainedPrompts.get(promptKey).targetBinIndex, false);
-    } else if (state.targetBinsInfo.length > 0) {
-      setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
     }
     renderTrainedMemoryStripHtml();
     triggerBurstDrop();
@@ -2363,7 +2129,6 @@
     if (mem && mem.targetBinIndex < VOCABULARY.length) {
       setBackpropTargetBin(mem.targetBinIndex, false);
     }
-    syncContextualKnobsForPrompt(pKey);
     renderTrainedMemoryStripHtml();
     triggerBurstDrop();
   }
@@ -2568,8 +2333,7 @@
           promptKey: pKey,
           targetBinIndex: entry.targetBinIndex,
           epochs: entry.epochs || 0,
-          converged: Boolean(entry.converged),
-          knobWeights: Array.from(entry.knobWeights.entries())
+          converged: Boolean(entry.converged)
         });
       }
       const payload = {
@@ -2688,7 +2452,7 @@
       }
 
       // 4. Restore Mode & Knob Weights
-      state.mode = payload.mode || "custom";
+      state.mode = payload.mode === "random" || payload.mode === "neutral" ? payload.mode : "custom";
       Object.entries(presetBtns).forEach(([key, btn]) => {
         if (btn) btn.classList.toggle("active", key === state.mode);
       });
@@ -2709,8 +2473,7 @@
             promptKey: r.promptKey,
             targetBinIndex: r.targetBinIndex,
             epochs: r.epochs || 0,
-            converged: Boolean(r.converged),
-            knobWeights: new Map(Array.isArray(r.knobWeights) ? r.knobWeights : [])
+            converged: Boolean(r.converged)
           });
         }
       }
@@ -2835,7 +2598,6 @@
         setBackpropTargetBin(firstEntry.targetBinIndex, false);
       }
       renderTokenChips();
-      syncContextualKnobsForPrompt(firstKey);
       renderTrainedMemoryStripHtml();
     }
 
@@ -2916,12 +2678,9 @@
     }
 
     initTargetWordSelect();
-    layoutBoard(false);
+    layoutBoard(true);
     clearBallsAndBins(true);
     renderTokenChips();
-    if (state.targetBinsInfo.length > 0) {
-      setBackpropTargetBin(state.targetBinsInfo[0].binIndex, false);
-    }
     return true;
   }
 
@@ -3139,7 +2898,6 @@
             nextTrainedPrompts.set(r.promptKey, {
               promptKey: r.promptKey,
               targetBinIndex,
-              knobWeights: new Map(),
               epochs: 0,
               converged: false
             });
@@ -3160,7 +2918,6 @@
             setBackpropTargetBin(entry.targetBinIndex, false);
           }
           renderTokenChips();
-          syncContextualKnobsForPrompt(activeKey);
           renderTrainedMemoryStripHtml();
           bpFeedbackLog.innerHTML = `✅ ${state.trainedPrompts.size} ${state.trainedPrompts.size === 1 ? "rule loaded" : "rules loaded"} into memory. Click <strong>🔁 Auto-Train</strong> to train them one by one.`;
         } else {
