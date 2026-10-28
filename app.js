@@ -406,9 +406,9 @@
     const normalizedSize = Math.max(0.04, Math.min(0.96, (decimalVal - 0.06) / 0.92));
     const wordOffset = totalTokens > 1 ? ((tokenIndex / (totalTokens - 1)) - 0.5) * 0.038 : 0;
     const ctxShift = contextSig ? contextSig.subChannelShift : 0;
-    const jitter = (Math.random() - 0.5) * (0.018 + state.temperature * 0.028);
+    // Inferencia determinista: sin jitter aleatorio. La aleatoriedad solo se usa al muestrear la palabra ganadora.
 
-    const tDrop = Math.max(0.04, Math.min(0.96, normalizedSize + wordOffset + ctxShift + jitter));
+    const tDrop = Math.max(0.04, Math.min(0.96, normalizedSize + wordOffset + ctxShift));
     return railStartX + tDrop * trackLen;
   }
 
@@ -925,7 +925,7 @@
       restitution: item.spec.restitution,
       x: railStartX,
       y: railStartY,
-      vx: 320 + Math.random() * 45, // velocidad de rodadura a lo largo de los dos carriles oblicuos
+      vx: 342.5, // velocidad de rodadura (fija, determinista) a lo largo de los dos carriles oblicuos
       vy: 0,
       onRails: true,
       dropX,
@@ -943,6 +943,7 @@
   function clearBallsAndBins(preserveEpochs = false) {
     state.balls = [];
     state.spawnQueue = [];
+    state.spawnTimer = 0;
     state.landedHistory = [];
     state.railDropRings = [];
     resetKnobsToBaseWeights();
@@ -1260,8 +1261,8 @@
           ball.x = ball.dropX;
           ball.y = getRailCenterYAtX(ball.dropX) + 4;
           ball.onRails = false;
-          ball.vx = 18 + (Math.random() - 0.5) * (20 + state.temperature * 28);
-          ball.vy = 52 + Math.random() * 18;
+          ball.vx = 18;
+          ball.vy = 61;
 
           state.railDropRings.push({
             x: ball.x,
@@ -1282,7 +1283,25 @@
         ball.stuckTimer += dt;
         if (ball.stuckTimer > 0.12) {
           ball.vy += 85;
-          ball.vx += (Math.random() < 0.5 ? -1 : 1) * (35 + Math.random() * 25);
+          // Empujón determinista: aleja la bola del knob más cercano (desempate por la inclinación del knob)
+          let nearestKnob = null;
+          let nearestDistSq = Infinity;
+          for (const knob of state.knobs) {
+            const kdx = ball.x - knob.x;
+            const kdy = ball.y - knob.y;
+            const d2 = kdx * kdx + kdy * kdy;
+            if (d2 < nearestDistSq) {
+              nearestDistSq = d2;
+              nearestKnob = knob;
+            }
+          }
+          let pushDir = 1;
+          if (nearestKnob) {
+            const kdx = ball.x - nearestKnob.x;
+            if (kdx !== 0) pushDir = kdx > 0 ? 1 : -1;
+            else if (nearestKnob.weight !== 0) pushDir = nearestKnob.weight > 0 ? 1 : -1;
+          }
+          ball.vx += pushDir * 47.5;
           ball.stuckTimer = 0;
         }
       } else {
@@ -1338,14 +1357,13 @@
 
             const w = knob.weight;
             const massStability = 0.82 + (ball.tier / 5) * 0.42;
-            const thermalScatter =
-              (Math.random() - 0.5) * 2 * state.temperature * (135 / Math.sqrt(ball.mass));
+            // Sin dispersión térmica aleatoria: la Temperatura solo afecta al muestreo de la palabra ganadora.
             const knobDeflectionVx = w * 185 * state.knobStrength * massStability;
 
-            ball.vx = ball.vx * 0.3 + knobDeflectionVx + thermalScatter;
+            ball.vx = ball.vx * 0.3 + knobDeflectionVx;
 
             if (Math.abs(ball.vx) < 22) {
-              ball.vx += (nx >= 0 ? 1 : -1) * (25 + Math.random() * 15);
+              ball.vx += (nx >= 0 ? 1 : -1) * 32.5;
             }
 
             if (ball.vy < 48 && ny < 0) {
@@ -1405,7 +1423,7 @@
                 spec: ball.spec,
                 word: ball.word,
                 radius: Math.max(3.8, Math.min(7.2, ball.radius * 0.82)),
-                jitterX: (Math.random() - 0.5) * 5
+                jitterX: (((targetBin.settledBalls.length * 7) % 5) - 2) // desfase visual determinista
               });
             }
           }
@@ -2967,16 +2985,24 @@
     resizeObserver.observe(canvasWrapper);
   }
 
+  // Paso de física fijo: la simulación es determinista e independiente de los FPS del navegador.
+  const FIXED_PHYSICS_DT = 1 / 60;
+  const MAX_PHYSICS_STEPS_PER_FRAME = 24;
+  let physicsAccumulator = 0;
   let lastTime = performance.now();
   function animate(now) {
     const rawDt = Math.min(0.035, (now - lastTime) / 1000);
     lastTime = now;
 
-    const totalSimDt = rawDt * state.simSpeed;
-    const macroSteps = Math.max(1, Math.ceil(state.simSpeed));
-    const stepDt = totalSimDt / macroSteps;
-    for (let i = 0; i < macroSteps; i++) {
-      stepPhysics(stepDt);
+    physicsAccumulator += rawDt * state.simSpeed;
+    let steps = 0;
+    while (physicsAccumulator >= FIXED_PHYSICS_DT && steps < MAX_PHYSICS_STEPS_PER_FRAME) {
+      stepPhysics(FIXED_PHYSICS_DT);
+      physicsAccumulator -= FIXED_PHYSICS_DT;
+      steps++;
+    }
+    if (steps >= MAX_PHYSICS_STEPS_PER_FRAME) {
+      physicsAccumulator = 0; // descartar tiempo atrasado (ralentiza, pero no altera el resultado)
     }
     drawBoard();
 
